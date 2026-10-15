@@ -8,7 +8,7 @@
     "stats": "node scripts/stats-run.mjs",
     "index": "node scripts/index-check.mjs",
     "rank": "node scripts/rank-check.mjs",
-    "schedule": "zsh scripts/install-schedule.sh"
+    "schedule": "node scripts/schedule.mjs"
   },
   "keywords": [],
   "author": "",

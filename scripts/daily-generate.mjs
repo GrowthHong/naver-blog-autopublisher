@@ -25,7 +25,7 @@ const prev = await readFile(LOG, "utf8").catch(() => "");
 const done = (prev.match(/RUN-DONE exit=0/g) || []).length;
 if (done >= target) { await log(`오늘 목표 ${target}편 달성(${done}) — 종료`); process.exit(0); }
 
-const env = { ...process.env, PATH: `${HOME}/.local/bin:/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`, LANG: "ko_KR.UTF-8" };
+const env = { ...process.env, PATH: process.platform === "win32" ? process.env.PATH : `${HOME}/.local/bin:/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`, LANG: "ko_KR.UTF-8" };
 for (const k of Object.keys(env)) if (k.startsWith("CLAUDE") || k === "ANTHROPIC_BASE_URL" || k === "ANTHROPIC_AUTH_TOKEN") delete env[k];
 try { const tok = (await readFile(paths.oauthToken, "utf8")).trim(); if (tok) env.CLAUDE_CODE_OAUTH_TOKEN = tok; } catch { /* 없음 */ }
 

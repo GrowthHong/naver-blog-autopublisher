@@ -120,4 +120,5 @@ console.log(md);
 const msgs = [];
 if (problems.length) msgs.push(`색인 ${problems[0].st}: ${problems[0].title.slice(0, 30)}${problems.length > 1 ? ` 외 ${problems.length - 1}편` : ""}`);
 if (dupes.length) msgs.push(`큐에 이미 발행된 원고 ${dupes.length}편 (중복 발행 주의)`);
-if (msgs.length) execFile("osascript", ["-e", `display notification ${JSON.stringify(msgs.join(" / "))} with title "혜택수첩 블로그" subtitle "색인 확인"`]);
+if (msgs.length && process.platform === "darwin") execFile("osascript", ["-e", `display notification ${JSON.stringify(msgs.join(" / "))} with title "블로그 자동발행기" subtitle "색인 확인"`]);
+else if (msgs.length && process.platform === "win32") execFile("powershell", ["-NoProfile", "-Command", `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show("${msgs.join(" / ").replace(/["`$]/g, "")}", "블로그 자동발행기 - 색인 확인") | Out-Null`], () => {});

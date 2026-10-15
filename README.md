@@ -33,6 +33,8 @@ cd naver-blog-autopublisher && zsh install.sh && npm start
 - (선택) 네이버 검색광고 API 키 — 키워드 검색량으로 주제를 거릅니다
 
 ## 설치와 실행
+
+자세한 단계별 안내(맥·윈도우): [INSTALL.md](INSTALL.md)
 ```bash
 zsh install.sh
 npm start

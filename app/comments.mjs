@@ -114,7 +114,7 @@ export function suggestComment({ title, brief, blogKey = "main" }) {
     const env = { ...process.env };
     for (const k of Object.keys(env)) if (k.startsWith("CLAUDE") || k === "ANTHROPIC_BASE_URL" || k === "ANTHROPIC_AUTH_TOKEN") delete env[k];
     try { const tok = (await readFile(paths.oauthToken, "utf8")).trim(); if (tok) env.CLAUDE_CODE_OAUTH_TOKEN = tok; } catch { /* 토큰 없음 */ }
-    env.PATH = `/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:${env.PATH || ""}`;
+    if (process.platform !== "win32") env.PATH = `/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:${env.PATH || ""}`;
     const child = spawn("claude", ["-p", prompt, "--model", "haiku", "--output-format", "text", "--tools", ""], { stdio: ["ignore", "pipe", "pipe"], env });
     let out = "", err = "";
     child.stdout.on("data", (d) => (out += d));

@@ -55,7 +55,7 @@ export async function startGeneration(topic = "", blog = null, notes = "") {
   Object.assign(job, { running: true, startedAt: Date.now(), finishedAt: null, exitCode: null, topic, newFiles: [], log: "", summary: "" });
 
   // 다른 클로드 세션의 프록시·토큰이 상속되면 401이 난다 → 제거하고 CLI 자체 로그인(또는 장기 토큰)을 쓴다
-  const childEnv = { ...process.env, PATH: `${HOME}/.local/bin:/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` };
+  const childEnv = { ...process.env, PATH: process.platform === "win32" ? process.env.PATH : `${HOME}/.local/bin:/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` };
   for (const key of Object.keys(childEnv)) if (key.startsWith("CLAUDE") || key === "ANTHROPIC_BASE_URL" || key === "ANTHROPIC_AUTH_TOKEN") delete childEnv[key];
   try { const tok = (await readFile(paths.oauthToken, "utf8")).trim(); if (tok) childEnv.CLAUDE_CODE_OAUTH_TOKEN = tok; } catch { /* 토큰 없음 */ }
 
