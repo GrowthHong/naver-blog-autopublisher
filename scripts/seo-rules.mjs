@@ -121,7 +121,7 @@ export async function checkPost({ title, body, publishedDir }) {
   const allLinks = links(body);
   const selfLinks = allLinks.filter((l) => l.includes(RULES.selfHost));
   push("links-total", allLinks.length <= RULES.linksMax, `외부 링크 ${RULES.linksMax}개 이하`, `현재 ${allLinks.length}개`);
-  push("links-self", selfLinks.length <= RULES.selfLinksMax, `혜택수첩 링크 ${RULES.selfLinksMax}개 이하`, `현재 ${selfLinks.length}개`);
+  push("links-self", selfLinks.length <= RULES.selfLinksMax, `자기 사이트 링크 ${RULES.selfLinksMax}개 이하`, `현재 ${selfLinks.length}개`);
   push("links-short", !RULES.shortUrlPattern.test(body), "단축 URL 없음", "목적지 불명 링크는 공식 리스크");
   const hasGovLink = allLinks.some((l) => /go\.kr|or\.kr/.test(l));
   push("links-gov", true, "공식 기관 원문 링크 (권장)", hasGovLink ? "포함 ✓ (신뢰 가점)" : "미포함 — 넣으면 좋음", "warn");
