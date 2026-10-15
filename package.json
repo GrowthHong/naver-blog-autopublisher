@@ -1,0 +1,20 @@
+{
+  "name": "naver-blog-autopublisher",
+  "version": "1.0.0",
+  "description": "네이버 블로그 자동발행기 — 원고 생성·검사·에디터 자동 입력·예약·이웃·댓글·통계 (로컬 설치형)",
+  "scripts": {
+    "start": "node app/server.mjs",
+    "generate": "node scripts/daily-generate.mjs",
+    "stats": "node scripts/stats-run.mjs",
+    "index": "node scripts/index-check.mjs",
+    "rank": "node scripts/rank-check.mjs",
+    "schedule": "zsh scripts/install-schedule.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "^1.63.0"
+  }
+}

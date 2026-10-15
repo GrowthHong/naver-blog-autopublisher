@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>블로그 자동발행기</title>
+<style>
+  :root { --ink:#1f2933; --muted:#52606d; --line:#d9e2ec; --soft:#f3f4f6; --primary:#155e75; --deep:#0f4c5c; --ok:#1c7a4c; --bad:#b3261e; --warn:#8a5a00; --warnbg:#fff8db; --okbg:#e9f8ef; --badbg:#fdf1f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--soft); color:var(--ink); font-family:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; font-size:14.5px; line-height:1.55; }
+  .wrap { max-width:1080px; margin:0 auto; padding:24px 20px 72px; }
+  h1 { font-size:22px; font-weight:900; color:var(--deep); margin:0; }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  .account { font-size:13px; color:var(--muted); display:flex; gap:8px; align-items:center; }
+  .account b { color:var(--ink); }
+  .chip { display:inline-block; padding:2px 9px; border-radius:99px; font-size:12px; font-weight:800; background:#e2ebf0; color:var(--deep); }
+
+  /* 단계 안내 */
+  .flow { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:18px 0 14px; }
+  .flow .st { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; display:flex; gap:10px; align-items:flex-start; }
+  .flow .n { flex:none; width:26px; height:26px; border-radius:50%; background:var(--primary); color:#fff; font-weight:900; font-size:13px; display:flex; align-items:center; justify-content:center; }
+  .flow .t { font-weight:800; font-size:13.5px; }
+  .flow .d { font-size:12px; color:var(--muted); margin-top:2px; }
+  @media (max-width:840px){ .flow{grid-template-columns:1fr 1fr;} }
+
+  /* 처음 안내 */
+  .guide { background:#e8f4f8; border:1px solid #bfdde6; border-radius:10px; padding:12px 16px; margin-bottom:14px; display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .guide b { color:var(--deep); }
+  .guide ol { margin:6px 0 0; padding-left:20px; font-size:13.5px; }
+  .guide li { margin:2px 0; }
+
+  /* 탭 */
+  .tabs { display:flex; gap:6px; border-bottom:2px solid var(--line); margin-bottom:16px; }
+  .tab { border:0; background:transparent; color:var(--muted); font:inherit; font-weight:800; font-size:15px; padding:10px 16px; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; }
+  .tab.active { color:var(--deep); border-bottom-color:var(--primary); }
+  .tab .badge { display:inline-block; margin-left:6px; background:var(--primary); color:#fff; border-radius:99px; font-size:11px; padding:1px 7px; vertical-align:middle; }
+  .page { display:none; } .page.active { display:block; }
+
+  /* 패널 */
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .panel > header { padding:14px 18px 12px; border-bottom:1px solid var(--line); background:#fafbfc; }
+  .panel > header .h { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .panel > header h2 { margin:0; font-size:16px; font-weight:900; display:flex; align-items:center; gap:8px; }
+  .panel > header h2 .n { width:24px; height:24px; border-radius:50%; background:var(--primary); color:#fff; font-size:13px; display:inline-flex; align-items:center; justify-content:center; }
+  .panel > header .help { margin:6px 0 0; font-size:13px; color:var(--muted); }
+  .cols { display:grid; grid-template-columns: 400px 1fr; gap:16px; }
+  @media (max-width:840px){ .cols{grid-template-columns:1fr;} }
+
+  button { border:0; border-radius:8px; padding:10px 16px; font:inherit; font-weight:800; font-size:14px; cursor:pointer; background:var(--primary); color:#fff; }
+  button.ghost { background:#fff; color:var(--primary); border:1.5px solid var(--primary); }
+  button.gray { background:#fff; color:var(--muted); border:1.5px solid var(--line); }
+  button.small { padding:6px 11px; font-size:12.5px; }
+  button.danger { background:var(--bad); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  input[type=text], input[type=number] { border:1.5px solid var(--line); border-radius:8px; padding:9px 12px; font:inherit; font-size:14px; }
+
+  .toolbar { display:flex; gap:8px; align-items:center; padding:12px 18px; border-bottom:1px solid var(--soft); flex-wrap:wrap; }
+  .status { font-size:12.5px; font-weight:700; color:var(--muted); }
+  .banner { padding:10px 18px; font-size:13px; font-weight:700; border-bottom:1px solid var(--soft); display:none; }
+  .banner.show { display:block; }
+
+  .draft { padding:14px 18px; border-bottom:1px solid var(--soft); cursor:pointer; }
+  .draft:hover { background:#f4f9fb; }
+  .draft.active { background:#e8f4f8; box-shadow:inset 4px 0 0 var(--primary); }
+  .draft .t { font-weight:800; font-size:15px; line-height:1.4; }
+  .draft .m { margin-top:4px; font-size:12.5px; color:var(--muted); }
+  .pill { display:inline-block; font-size:11.5px; font-weight:800; padding:2px 8px; border-radius:10px; }
+  .pill.ok { background:var(--okbg); color:var(--ok); }
+  .pill.bad { background:var(--badbg); color:var(--bad); }
+  .pill.warn { background:var(--warnbg); color:var(--warn); }
+
+  .preview { padding:18px; }
+  .preview h3 { font-size:19px; font-weight:900; margin:0 0 8px; line-height:1.4; }
+  .preview pre { white-space:pre-wrap; font:inherit; font-size:14.5px; line-height:1.7; color:var(--ink); background:var(--soft); border-radius:10px; padding:14px 16px; max-height:300px; overflow:auto; }
+  .sect { padding:0 18px 14px; }
+  .sect h4 { margin:14px 0 6px; font-size:13.5px; font-weight:900; color:var(--deep); }
+  .check { display:flex; gap:8px; align-items:baseline; padding:6px 0; border-bottom:1px dashed var(--soft); font-size:13.5px; }
+  .check .s { font-weight:900; width:18px; }
+  .check.ok .s { color:var(--ok); } .check.bad .s { color:var(--bad); }
+  .check .d { color:var(--muted); margin-left:auto; font-size:12.5px; }
+  .msg { margin:0 18px 14px; padding:10px 14px; border-radius:8px; font-size:13.5px; font-weight:700; display:none; }
+  .msg.show { display:block; }
+  .msg.good { background:var(--okbg); color:var(--ok); }
+  .msg.warn { background:var(--warnbg); color:var(--warn); }
+
+  /* 행동 버튼 카드 — 무엇을 하는 버튼인지 설명 붙임 */
+  .actions { display:grid; gap:10px; padding:4px 18px 18px; }
+  .action { display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:center; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .action .desc { font-size:12.5px; color:var(--muted); }
+  .action .desc b { color:var(--ink); display:block; font-size:13.5px; margin-bottom:2px; }
+  .action button { min-width:170px; }
+
+  .empty { padding:32px 18px; color:var(--muted); font-size:14px; text-align:center; line-height:1.7; }
+
+  /* 이웃 */
+  .mode { margin:14px 18px; border-radius:10px; padding:14px 16px; border:1px solid var(--line); }
+  .mode.auto { background:var(--warnbg); border-color:#e8d48a; }
+  .mode h4 { margin:0 0 4px; font-size:14.5px; font-weight:900; }
+  .mode p { margin:0 0 10px; font-size:13px; color:var(--muted); }
+  .mode .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .cand { padding:14px 18px; border-bottom:1px solid var(--soft); }
+  .cand .t { font-weight:800; font-size:15px; }
+  .cand .m { margin-top:3px; font-size:12.5px; color:var(--muted); }
+  .cand .btns { margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
+
+  /* 댓글 */
+  .cand textarea { width:100%; box-sizing:border-box; min-height:64px; margin-top:8px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:13.5px; line-height:1.5; resize:vertical; }
+  .cand .brief { margin-top:4px; font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .cand.done { opacity:.55; }
+  .cand .chk { float:right; transform:scale(1.2); margin:4px 2px 0 10px; }
+
+  /* 오늘 */
+  .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .tile { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; cursor:pointer; transition:box-shadow .15s; }
+  .tile:hover { box-shadow:0 2px 10px rgba(15,76,92,.12); }
+  .tile .tl { font-size:12.5px; font-weight:800; color:var(--muted); }
+  .tile .tv { font-size:28px; font-weight:900; color:var(--deep); margin:4px 0 2px; line-height:1.1; }
+  .tile .tv small { font-size:13px; font-weight:700; color:var(--muted); margin-left:4px; }
+  .tile .td { font-size:12.5px; color:var(--muted); line-height:1.45; }
+  .todo { list-style:none; margin:0; padding:6px 0; }
+  .todo li { display:flex; gap:10px; align-items:flex-start; padding:11px 18px; border-bottom:1px solid var(--soft); font-size:14px; cursor:pointer; }
+  .todo li:hover { background:var(--soft); }
+  .todo li .dot { flex:none; width:10px; height:10px; border-radius:50%; margin-top:6px; background:var(--primary); }
+  .todo li.warn .dot { background:#b91c1c; } .todo li.idea .dot { background:#b7791f; }
+  .todo li.empty { color:var(--muted); cursor:default; }
+  .checks { padding:8px 18px 12px; font-size:13.5px; }
+  .checks .row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--soft); }
+  .checks .row:last-child { border-bottom:0; }
+  .checks .ok { color:#15803d; font-weight:800; } .checks .bad { color:#b91c1c; font-weight:800; } .checks .mut { color:var(--muted); }
+  @media (max-width:840px){ .tiles{grid-template-columns:1fr 1fr;} }
+
+  /* 설정 */
+  .setting { display:grid; grid-template-columns:220px 1fr; gap:16px; padding:16px 18px; border-bottom:1px solid var(--soft); align-items:start; }
+  .setting .k { font-weight:800; }
+  .setting .k small { display:block; font-weight:600; color:var(--muted); font-size:12.5px; margin-top:2px; }
+  .setting .v { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  @media (max-width:640px){ .setting{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>블로그 자동발행기</h1>
+    <div class="account">운영 블로그
+      <select id="blogSelect" onchange="switchBlog(this.value)" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;font-weight:800;color:var(--deep);background:#fff"></select>
+      <span class="chip" id="accountId">—</span>
+      <button class="ghost small" onclick="toggleHelp()" title="사용 방법">? 도움말</button></div>
+  </div>
+  <div class="guide" id="guide" style="display:none">
+    <div>
+      <b>사용 방법 (3분 요약)</b>
+      <ol>
+        <li><b>오늘</b> 탭의 "오늘 할 일"대로 하면 됩니다. 숫자 타일을 누르면 해당 탭으로 갑니다.</li>
+        <li><b>원고</b> 탭에서 원고를 고르고 [자동 입력]을 누르면 크롬에 글·이미지·영상이 들어가고 발행 창에 주제·예약 시각(다음 빈 날 20:30)까지 채워집니다. 네이버의 <b>[발행] 버튼만 직접</b> 누르고, 돌아와서 [발행 완료 처리].</li>
+        <li><b>이웃</b> 탭은 받은 신청 수락과 서로이웃 신청, <b>댓글</b> 탭은 이웃 새 글에 댓글. 하루 10개면 충분합니다.</li>
+        <li>자동 작업(원고 생성 06시·통계 08:10·색인 확인 하루 4번·받은 이웃 수락 10·20시·순위 월요일)은 터미널에서 <code>npm run schedule</code> 한 번 등록하면 맥이 켜져 있는 동안 돕니다.</li>
+      </ol>
+    </div>
+    <button class="gray small" onclick="toggleHelp()">닫기</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="today" onclick="showTab('today')">오늘</button>
+    <button class="tab" data-tab="drafts" onclick="showTab('drafts')">원고 <span class="badge" id="draftCount">0</span></button>
+    <button class="tab" data-tab="neighbors" onclick="showTab('neighbors')">이웃 <span class="badge" id="incomingBadge" style="display:none">0</span></button>
+    <button class="tab" data-tab="comments" onclick="showTab('comments')">댓글 <span class="badge" id="commentBadge" style="display:none">0</span></button>
+    <button class="tab" data-tab="settings" onclick="showTab('settings')">설정</button>
+  </div>
+
+  <!-- ───────── 오늘 탭 ───────── -->
+  <section class="page active" id="page-today">
+    <div class="tiles" id="tiles">
+      <div class="tile" onclick="showTab('drafts')"><div class="tl">발행 큐</div><div class="tv" id="tQueue">—</div><div class="td" id="tQueueD">불러오는 중…</div></div>
+      <div class="tile" onclick="showTab('neighbors')"><div class="tl">이웃·댓글</div><div class="tv" id="tBuddy">—</div><div class="td" id="tBuddyD"></div></div>
+      <div class="tile" onclick="openReport('stats')"><div class="tl">7일 조회수</div><div class="tv" id="tStats">—</div><div class="td" id="tStatsD"></div></div>
+      <div class="tile" onclick="openReport('rank')"><div class="tl">검색 순위</div><div class="tv" id="tRank">—</div><div class="td" id="tRankD"></div></div>
+    </div>
+    <div class="cols" style="margin-top:14px">
+      <div class="panel">
+        <header><div class="h"><h2>오늘 할 일</h2><span class="status" id="todayStamp"></span></div></header>
+        <ul class="todo" id="todoList"><li class="empty">불러오는 중…</li></ul>
+      </div>
+      <div class="panel">
+        <header><div class="h"><h2>점검</h2></div></header>
+        <div class="checks" id="todayChecks"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 원고 탭 ───────── -->
+  <section class="page" id="page-drafts">
+    <div class="cols">
+      <div class="panel">
+        <header>
+          <div class="h"><h2><span class="n">1</span>원고 고르기</h2>
+            <span style="display:flex;gap:6px;align-items:center"><span class="status" id="refreshStatus"></span>
+              <button class="gray small" id="refreshBtn" onclick="refresh(true)">새로고침</button></span></div>
+          <p class="help">클로드가 쓴 원고가 여기 쌓입니다. 자동 작업을 등록했다면 매일 06:00에 설정한 편수만큼 추가되고(같은 주제의 사이트 글도 함께 배포), 지금 바로 필요하면 아래에서 만들 수 있습니다.</p>
+        </header>
+        <div class="toolbar">
+          <input type="text" id="genTopic" placeholder="주제 (비우면 백로그에서 자동 선택)" style="flex:1;min-width:160px;font-size:13px;padding:7px 10px" />
+          <button class="small" id="genBtn" onclick="generateDraft()">새 원고 생성</button>
+        </div>
+        <div class="banner" id="genStatus"></div>
+        <div id="list"><div class="empty">불러오는 중…</div></div>
+      </div>
+
+      <div class="panel" id="detailPanel">
+        <header>
+          <div class="h"><h2><span class="n">2</span>확인하고 에디터에 넣기</h2></div>
+          <p class="help">왼쪽에서 원고를 고르면 미리보기와 네이버 검색 노출 검사 결과가 나옵니다. 검사를 통과한 원고만 자동 입력할 수 있습니다.</p>
+        </header>
+        <div id="detail"><div class="empty">👈 왼쪽 목록에서 원고를 선택하세요</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 이웃 탭 ───────── -->
+  <section class="page" id="page-neighbors">
+    <div class="panel">
+      <header>
+        <div class="h"><h2><span class="n">4</span>이웃 늘리기 <span class="status" id="nCount"></span></h2>
+          <button class="ghost small" onclick="refreshNeighbors()">후보 새로 찾기</button></div>
+        <p class="help">기초연금·노인일자리·노후준비 같은 우리 주제로 글을 쓰는 활동 블로거를 찾아 점수순으로 보여줍니다. 이웃이 되면 그 사람의 피드에 우리 글이 노출됩니다. <b>새 글을 발행한 날에 하는 것</b>이 수락률이 좋습니다.</p>
+      </header>
+
+      <div class="mode" id="incomingBox" style="border-color:#86c7a3;background:#f0faf4">
+        <h4>받은 서로이웃 신청 <span class="status" id="incomingCount">확인 중…</span></h4>
+        <p>상대가 먼저 보낸 신청입니다. 수락이 늦으면 취소되니 바로 받고, 수락 직후 상대의 최신 글에 글 내용을 짚은 환영 댓글을 하나 답니다(체인 신호). 매일 10시·20시에 자동으로도 돌아갑니다.</p>
+        <div class="row">
+          <button class="small" id="acceptBtn" onclick="acceptIncoming()">모두 수락 + 환영 댓글</button>
+          <label style="font-size:13px"><input type="checkbox" id="acceptWelcome" checked> 환영 댓글도 달기</label>
+          <span class="status" id="acceptStatus"></span>
+        </div>
+        <div id="incomingList" style="margin-top:8px;font-size:13px"></div>
+      </div>
+
+      <div class="mode">
+        <h4>반자동 (권장) — 후보마다 [열기] → 열린 창에서 [확인]만 클릭</h4>
+        <p>서로이웃 선택과 인사 메시지는 자동으로 채워져 있습니다. 확인을 눌렀으면 [신청함]으로 기록하세요. 관심 없는 블로그는 [건너뛰기].</p>
+      </div>
+
+      <div class="mode auto">
+        <h4>완전 자동 — 클릭까지 프로그램이 대신</h4>
+        <p>여러 명에게 12~40초 간격으로 자동 신청합니다. 네이버가 제한·보안문자를 띄우면 즉시 스스로 멈춥니다. 하루 상한은 설정 탭에서 바꿀 수 있습니다.</p>
+        <div class="row">
+          <label style="font-size:13px">이번에 <input type="number" id="autoCount" value="10" min="1" max="100" style="width:64px;padding:6px 8px"> 건</label>
+          <button class="small" id="autoBtn" onclick="startAuto()">완전 자동 신청 실행</button>
+          <button class="gray small" onclick="stopAuto()">중단</button>
+          <span class="status" id="autoStatus"></span>
+        </div>
+      </div>
+
+      <div id="neighbors"><div class="empty">[후보 새로 찾기]를 눌러 시작하세요</div></div>
+    </div>
+  </section>
+
+  <!-- ───────── 댓글 탭 ───────── -->
+  <section class="page" id="page-comments">
+    <div class="panel">
+      <header>
+        <div class="h"><h2><span class="n">5</span>이웃 새 글에 댓글 <span class="status" id="cCount"></span></h2>
+          <div style="display:flex;gap:6px"><button class="ghost small" onclick="loadComments()">새 글 불러오기</button><button class="small" id="suggestAllBtn" onclick="suggestAll()">모두 문안 제안</button></div></div>
+        <div id="suggestProgress" style="display:none;margin:10px 18px 0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--warnbg)">
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800"><span id="spText">문안 제안 진행 중…</span><span id="spCount"></span></div>
+          <div style="height:8px;background:#fff;border-radius:4px;margin-top:6px;overflow:hidden"><div id="spBar" style="height:100%;width:0%;background:#15803d;transition:width .4s"></div></div>
+          <div id="spNow" style="margin-top:6px;font-size:12.5px;color:var(--muted)"></div>
+        </div>
+        <p class="help">네이버는 이웃 수가 아니라 <b>읽고·댓글 달고·다시 오는 관계(체인)</b>를 봅니다. 이웃이 오늘 올린 글을 모아 보여주고, 글 내용을 짚은 댓글 문안을 클로드가 제안합니다. 우리 주제와 겹치는 글이 위로 옵니다. 문안은 고쳐 써도 됩니다. <b>하루 10~20개</b>면 충분하고, 네이버가 보안문자를 띄우면 그날은 멈춥니다.</p>
+      </header>
+      <div class="mode">
+        <div class="row">
+          <button class="small" id="batchBtn" onclick="postChecked()">체크한 글에 순서대로 등록 (30~60초 간격)</button>
+          <button class="gray small" onclick="stopBatch()">중단</button>
+          <span class="status" id="batchStatus"></span>
+        </div>
+      </div>
+      <div id="comments"><div class="empty">[새 글 불러오기]를 눌러 시작하세요</div></div>
+    </div>
+  </section>
+
+  <!-- ───────── 설정 탭 ───────── -->
+  <section class="page" id="page-settings">
+    <div class="panel" id="setupPanel">
+      <header><div class="h"><h2>블로그 설정</h2><span class="status" id="setupStatus"></span></div><p class="help">처음 한 번 채우면 됩니다. 원고 생성·이웃·댓글이 전부 이 내용을 바탕으로 돌아가니, 주제 설명은 구체적으로 적을수록 글이 좋아집니다.</p></header>
+      <div class="setting"><div class="k">네이버 블로그 아이디 *<small>blog.naver.com/<b>여기</b> 부분</small></div><div class="v"><input type="text" id="s_blogId" placeholder="예: myblog123" style="width:220px" /></div></div>
+      <div class="setting"><div class="k">블로그 이름 *<small>글 하단 고정 문구에 들어감 (예: "부모님 혜택 노트")</small></div><div class="v"><input type="text" id="s_blogName" style="width:260px" /></div></div>
+      <div class="setting"><div class="k">주제 설명 *<small>어떤 글을 쓰는 블로그인지 2~4문장. 다루는 범위, 다루지 않는 것, 글의 목적</small></div><div class="v"><textarea id="s_topic" rows="3" style="width:100%;max-width:560px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit" placeholder="예: 50~60대 부모님께 필요한 정부 혜택(연금·건강보험·복지)을 신청 방법 중심으로 정리한다. 투자·보험 상품 추천은 다루지 않는다."></textarea></div></div>
+      <div class="setting"><div class="k">독자<small>누가 읽는지 한 줄</small></div><div class="v"><input type="text" id="s_audience" style="width:360px" placeholder="예: 부모님 혜택을 대신 알아보는 40~50대 자녀, 60대 본인" /></div></div>
+      <div class="setting"><div class="k">내 소개 한 줄<small>서로이웃 신청 메시지에 들어감. "저는 ___인데" 꼴</small></div><div class="v"><input type="text" id="s_intro" style="width:360px" placeholder="예: 부모님 정부혜택 신청법을 정리하는 블로거" /></div></div>
+      <div class="setting"><div class="k">댓글 화자<small>이웃 글에 댓글을 쓸 때 누구로 쓸지</small></div><div class="v"><input type="text" id="s_persona" style="width:360px" placeholder="예: 50~60대 정부 혜택을 정리하는 블로그 '○○' 운영자" /></div></div>
+      <div class="setting"><div class="k">이웃 후보 검색어<small>이 말로 글 쓰는 블로거를 찾아 서로이웃 후보로. 쉼표로 4~8개</small></div><div class="v"><input type="text" id="s_keywords" style="width:100%;max-width:560px" placeholder="예: 기초연금, 노인일자리, 노후준비, 50대 은퇴" /></div></div>
+      <div class="setting"><div class="k">댓글 우선 단어<small>이웃 새 글 중 이 단어가 든 글을 댓글 후보 위로. 쉼표로</small></div><div class="v"><input type="text" id="s_topicWords" style="width:100%;max-width:560px" placeholder="예: 연금, 복지, 건강보험, 지원금, 노후" /></div></div>
+      <div class="setting"><div class="k">연동 사이트 (선택)<small>글 끝 딥링크·유입 통계용. 없으면 비움</small></div><div class="v"><input type="text" id="s_siteUrl" style="width:320px" placeholder="https://example.com" /></div></div>
+      <div class="setting"><div class="k">본문 색<small>소제목 색 / 숫자 강조 색</small></div><div class="v"><input type="color" id="s_heading" value="#0f4c5c" /> <input type="color" id="s_number" value="#b91c1c" /></div></div>
+      <div class="setting"><div class="k"></div><div class="v"><button onclick="saveBlog()">블로그 설정 저장</button></div></div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <header><div class="h"><h2>실행 설정</h2></div></header>
+      <div class="setting">
+        <div class="k">네이버 로그인<small>자동 입력용 크롬에 한 번 로그인. "로그인 상태 유지" 체크. 로그인이 풀리면 여기서 다시</small></div>
+        <div class="v"><button class="gray small" onclick="login()">네이버 로그인 창 열기</button></div>
+      </div>
+      <div class="setting">
+        <div class="k">하루 생성 편수<small>자동 작업(06시)이 만드는 원고 수. 한 편에 3~8분, 클로드 사용량이 듭니다</small></div>
+        <div class="v"><input type="number" id="dailyTarget" value="1" min="1" max="10" style="width:90px" /><button class="ghost small" onclick="saveGen()">저장</button></div>
+      </div>
+      <div class="setting">
+        <div class="k">하루 발행 상한<small>검사기의 1일 발행 건수 제한. 0 = 제한 없음</small></div>
+        <div class="v"><input type="number" id="publishMax" value="0" min="0" max="20" style="width:90px" /><button class="ghost small" onclick="saveGen()">저장</button></div>
+      </div>
+      <div class="setting">
+        <div class="k">예약 발행 시각<small>자동 입력 때 발행 창에 "예약"을 켜고 이 시각으로 채웁니다. 하루 한 편씩 다음 빈 날에 배정. 비우면 예약 안 함. 10분 단위</small></div>
+        <div class="v"><input type="text" id="publishTime" value="20:30" placeholder="20:30" style="width:90px" /> 주제 <input type="text" id="publishTopic" value="비즈니스·경제" style="width:140px" /><button class="ghost small" onclick="saveGen()">저장</button></div>
+      </div>
+      <div class="setting">
+        <div class="k">서로이웃 하루 상한<small>완전 자동·수동 기록 합산. 권장 10~30</small></div>
+        <div class="v"><input type="number" id="autoCap" value="20" min="1" max="100" style="width:90px" /><button class="ghost small" onclick="saveCap()">저장</button></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <header><div class="h"><h2>키 (선택)</h2></div><p class="help">없어도 동작합니다. 있으면 키워드 검색량 게이트와 로그인 만료 없는 자동 생성이 됩니다.</p></header>
+      <div class="setting">
+        <div class="k">네이버 검색광고 API<small>searchad.naver.com → 도구 → API 사용 관리. 월 검색량으로 키워드를 거릅니다</small></div>
+        <div class="v"><input type="text" id="k_customer" placeholder="CUSTOMER_ID" style="width:120px" /> <input type="text" id="k_access" placeholder="액세스라이선스" style="width:220px" /> <input type="password" id="k_secret" placeholder="비밀키" style="width:200px" /><button class="ghost small" onclick="saveKeys()">저장</button></div>
+      </div>
+      <div class="setting">
+        <div class="k">클로드 장기 토큰<small>터미널에서 <code>claude setup-token</code> 실행 결과. 로그인 만료 없이 자동 생성이 돕니다</small></div>
+        <div class="v"><input type="password" id="k_oauth" placeholder="sk-ant-oat01-…" style="width:360px" /><button class="ghost small" onclick="saveKeys()">저장</button></div>
+      </div>
+      <div class="setting">
+        <div class="k">데이터 폴더<small>원고·이미지·기록·크롬 프로필이 여기에 저장됩니다</small></div>
+        <div class="v" style="font-size:13px;color:var(--muted)" id="dataDirLabel">—</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+let current = null;
+let knownFiles = null;
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  return res.json();
+}
+
+/* ── 탭·안내 ── */
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + name));
+  try { localStorage.setItem("tab", name); } catch {}
+}
+function toggleHelp() { const g = document.getElementById("guide"); g.style.display = g.style.display === "none" ? "flex" : "none"; }
+function openReport(kind) { const dir = document.getElementById("dataDirLabel").textContent || "~/.blog-autopublisher"; alert(`보고서 파일: ${dir}/reports/${kind}-report.md`); }
+async function loadToday() {
+  let d; try { d = await api("/api/today"); } catch { document.getElementById("todoList").innerHTML = '<li class="empty">서버 응답 없음</li>'; return; }
+  const q = d.queue;
+  document.getElementById("tQueue").innerHTML = `${q.count}<small>편</small>`;
+  document.getElementById("tQueueD").textContent = q.nextSlot ? `다음 빈 예약 ${q.nextSlot.slice(5)}${q.scheduledDays.length ? ` · 예약됨 ${q.scheduledDays.length}일` : ""}` : "예약 발행 꺼짐";
+  document.getElementById("tBuddy").innerHTML = `${d.incoming ?? "?"}<small>건 대기</small>`;
+  document.getElementById("tBuddyD").textContent = `오늘 댓글 ${d.commentsToday}개 · 서이추 ${d.buddyToday}/${d.buddyCap}`;
+  if (d.stats) { const diff = d.stats.cvPrev7 == null ? "" : ` (전주 ${d.stats.cvPrev7})`; document.getElementById("tStats").innerHTML = `${d.stats.cv7}<small>회</small>`; document.getElementById("tStatsD").textContent = `${d.stats.lastDate.slice(5)} ${d.stats.lastCv}회${diff}${d.stats.topQuery ? ` · "${d.stats.topQuery}"` : ""}`; }
+  else document.getElementById("tStatsD").textContent = "통계 수집 전";
+  if (d.rank) { document.getElementById("tRank").innerHTML = `${d.rank.top10}<small>편 10위 안</small>`; document.getElementById("tRankD").textContent = `60위 안 ${d.rank.in60}/${d.rank.total} · ${d.rank.best.map(b => `${b.keyword} ${b.rank}위`).join(", ")}`; }
+  else document.getElementById("tRankD").textContent = "순위 측정 전";
+  const todo = document.getElementById("todoList");
+  todo.innerHTML = d.todo.length ? d.todo.map(t => `<li class="${t.level}" onclick="showTab('${t.tab}')"><span class="dot"></span><span>${esc(t.text)}</span></li>`).join("") : '<li class="empty">오늘 할 일이 없습니다. 👍</li>';
+  document.getElementById("todayStamp").textContent = `${d.todayKst} 기준`;
+  const rows = [];
+  rows.push(`<div class="row"><span>색인</span><span class="${d.index.problems.length ? "bad" : "ok"}">${d.index.problems.length ? `누락 ${d.index.problems.length}편` : "정상"}${d.index.waiting ? ` <span class="mut">· 대기 ${d.index.waiting}</span>` : ""}</span></div>`);
+  rows.push(`<div class="row"><span>중복 원고</span><span class="${q.dupes.length ? "bad" : "ok"}">${q.dupes.length ? `${q.dupes.length}편 (큐에 남음)` : "없음"}</span></div>`);
+  rows.push(`<div class="row"><span>예약된 발행</span><span class="${q.scheduledDays.length ? "ok" : "mut"}">${q.scheduledDays.length ? q.scheduledDays.map(x => x.slice(5)).join(", ") : "없음"}</span></div>`);
+  if (d.season) rows.push(`<div class="row"><span>시즌(${d.season.month}월)</span><span class="mut" style="text-align:right;max-width:60%">지금 쓸 것: ${esc(d.season.writeNow.slice(0, 4).join(", "))}${d.season.writeNow.length > 4 ? " 외" : ""}</span></div>`);
+  document.getElementById("todayChecks").innerHTML = rows.join("");
+  const ib = document.getElementById("incomingBadge"); ib.textContent = d.incoming || 0; ib.style.display = d.incoming ? "" : "none";
+  const cb = document.getElementById("commentBadge"); cb.textContent = d.commentsToday; cb.style.display = d.commentsToday ? "" : "none";
+}
+function dismissGuide() {
+  document.getElementById("guide").style.display = "none";
+  try { localStorage.setItem("guideDismissed", "1"); } catch {}
+}
+try {
+  if (localStorage.getItem("guideDismissed")) document.getElementById("guide").style.display = "none";
+  const saved = localStorage.getItem("tab"); if (saved) showTab(saved);
+} catch {}
+
+/* ── 원고 목록 ── */
+function setRefreshStatus(text, kind) {
+  const el = document.getElementById("refreshStatus");
+  el.textContent = text;
+  el.style.color = kind === "new" ? "var(--ok)" : kind === "busy" ? "var(--warn)" : "var(--muted)";
+}
+
+async function refresh(manual) {
+  const btn = document.getElementById("refreshBtn");
+  btn.disabled = true;
+  setRefreshStatus(manual ? "폴더를 다시 읽는 중…" : "자동 갱신 중…", "busy");
+  let state;
+  try { state = await api("/api/state"); }
+  catch { setRefreshStatus("서버 응답 없음 — 발행기 서버가 꺼져 있는지 확인", "busy"); btn.disabled = false; return; }
+  const files = state.drafts.map(d => d.file);
+  const added = knownFiles ? files.filter(f => !knownFiles.includes(f)) : [];
+  knownFiles = files;
+  const t = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  if (added.length) setRefreshStatus(`새 원고 ${added.length}편 추가됨 · ${t}`, "new");
+  else setRefreshStatus(`${t} 확인 · 새 원고 없음`);
+  btn.disabled = false;
+  document.getElementById("dataDirLabel").textContent = state.dataDir || "";
+  if (state.needsSetup) {
+    setRefreshStatus("설정이 필요합니다");
+    document.getElementById("accountId").textContent = "설정 필요";
+    document.getElementById("setupStatus").textContent = "처음 오셨군요 — 아래를 채우고 저장하세요";
+    showTab("settings");
+    document.getElementById("draftCount").textContent = 0;
+    return;
+  }
+  document.getElementById("accountId").textContent = "blog.naver.com/" + (state.blogId || "?");
+  if (state.blog && !window._blogFilled) {
+    const b = state.blog; window._blogFilled = true;
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = Array.isArray(v) ? v.join(", ") : v; };
+    set("s_blogId", b.blogId); set("s_blogName", b.blogName); set("s_topic", b.topicDescription); set("s_audience", b.audience); set("s_intro", b.intro); set("s_persona", b.persona); set("s_keywords", b.keywords); set("s_topicWords", b.topicWords); set("s_siteUrl", b.siteUrl); set("s_heading", b.theme?.heading); set("s_number", b.theme?.number);
+  }
+  const sel = document.getElementById("blogSelect");
+  if (state.blogs && sel.options.length !== state.blogs.length) {
+    sel.innerHTML = state.blogs.map(b => `<option value="${b.key}">${b.label}</option>`).join("");
+  }
+  if (state.active) sel.value = state.active;
+  if (state.userCfg) { document.getElementById("dailyTarget").value = state.userCfg.dailyTarget ?? 1; document.getElementById("publishMax").value = state.userCfg.publishMax ?? 0; document.getElementById("publishTime").value = state.userCfg.publishTime ?? "20:30"; document.getElementById("publishTopic").value = state.userCfg.publishTopic ?? "비즈니스·경제"; }
+  document.title = (state.blogs?.find(b => b.key === state.active)?.label || "블로그") + " 자동발행기";
+  document.getElementById("draftCount").textContent = files.length;
+  const list = document.getElementById("list");
+  if (!state.drafts.length) {
+    list.innerHTML = '<div class="empty">대기 중인 원고가 없습니다.<br>위의 [새 원고 생성]을 누르세요.</div>';
+    return;
+  }
+  list.innerHTML = state.drafts.map(d => `
+    <div class="draft ${current===d.file?"active":""}" onclick="select('${d.file}')">
+      <div class="t">${d.title || "(제목 없음)"}</div>
+      <div class="m"><span class="pill ${d.seoOk?"ok":"bad"}">${d.seoOk?"검사 통과 · 바로 발행 가능":`검사 ${d.failCount}건 미통과`}</span>&nbsp;${d.file}</div>
+    </div>`).join("");
+}
+
+async function select(file) {
+  current = file;
+  refresh(false);
+  const d = await api("/api/draft?file=" + encodeURIComponent(file));
+  const checks = d.check.results.map(r => `
+    <div class="check ${r.ok?"ok":"bad"}"><span class="s">${r.ok?"✓":"✗"}</span> ${r.label} <span class="d">${r.detail}</span></div>`).join("");
+  document.getElementById("detail").innerHTML = `
+    <div class="preview">
+      <h3>${d.title}</h3>
+      <pre>${d.body.replace(/</g,"&lt;")}</pre>
+    </div>
+    <div class="sect">
+      <h4>네이버 검색 노출 검사 ${d.check.ok ? '<span class="pill ok">통과</span>' : '<span class="pill bad">미통과 — 원고 수정 필요</span>'}</h4>
+      ${checks}
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="actions">
+      <div class="action">
+        <button onclick="fill()" ${d.check.ok?"":"disabled"}>크롬 열고 자동 입력</button>
+        <div class="desc"><b>2단계 — 네이버 에디터에 글 넣기</b>크롬 창이 열리고 제목·본문·소제목·이미지·링크가 자동으로 들어갑니다. 내용 확인 후 <b style="display:inline">네이버의 [발행] 버튼은 직접</b> 누르세요.</div>
+      </div>
+      <div class="action">
+        <button class="gray" onclick="copyAll()">원고 텍스트 복사</button>
+        <div class="desc"><b>자동 입력이 안 될 때</b>원고를 텍스트로 복사합니다. 에디터에 직접 붙여넣기(Cmd+V)용.</div>
+      </div>
+      <div class="action">
+        <button class="ghost" onclick="archive()">발행 완료 처리</button>
+        <div class="desc"><b>3단계 — 발행을 마친 뒤</b>이 원고를 보관함으로 옮기고 목록에서 뺍니다. 다음 원고 검사(중복 문장·같은 링크 반복)의 기준이 되니 꼭 눌러주세요.</div>
+      </div>
+    </div>`;
+  window._draft = d;
+}
+
+function showMsg(text, kind) {
+  const el = document.getElementById("msg");
+  el.textContent = text;
+  el.className = "msg show " + (kind || "good");
+}
+
+async function fill() {
+  showMsg("크롬을 여는 중… 처음이면 20~30초 걸립니다. 창이 뜨면 잠시 기다려 주세요.", "warn");
+  const r = await api("/api/fill", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ file: current }) });
+  showMsg(r.message, r.ok ? "good" : "warn");
+}
+
+async function copyAll() {
+  const d = window._draft;
+  await navigator.clipboard.writeText(d.title + "\n\n" + d.body);
+  showMsg("원고 전체가 복사되었습니다. 에디터에 붙여넣기(Cmd+V) 하세요.");
+}
+
+async function archive() {
+  if (!confirm("네이버에서 발행을 마쳤나요? 이 원고를 보관함으로 옮깁니다.")) return;
+  await api("/api/archive", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ file: current }) });
+  current = null;
+  document.getElementById("detail").innerHTML = '<div class="empty">✅ 보관했습니다. 이제 <b>이웃</b> 탭에서 오늘 발행한 글을 알릴 이웃을 몇 명 신청해 보세요.</div>';
+  refresh(false);
+}
+
+/* ── 새 원고 생성 ── */
+let genTimer = null;
+function fmtElapsed(ms) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}분 ${String(s % 60).padStart(2, "0")}초`; }
+function setGenStatus(text, color) {
+  const st = document.getElementById("genStatus");
+  st.className = "banner" + (text ? " show" : "");
+  st.style.color = color; st.style.background = color === "var(--ok)" ? "var(--okbg)" : color === "var(--bad)" ? "var(--badbg)" : "var(--warnbg)";
+  st.textContent = text;
+}
+async function generateDraft() {
+  const topic = document.getElementById("genTopic").value.trim();
+  const r = await api("/api/drafts/generate", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ topic }) });
+  setGenStatus(r.message, r.ok ? "var(--warn)" : "var(--bad)");
+  if (r.ok) pollGenerate();
+}
+async function pollGenerate() {
+  clearInterval(genTimer);
+  const btn = document.getElementById("genBtn");
+  const tick = async () => {
+    const j = await api("/api/drafts/generate/status");
+    if (j.running) {
+      btn.disabled = true;
+      setGenStatus(`⏳ 원고 만드는 중 ${fmtElapsed(Date.now() - j.startedAt)} — 주제 선정 → 공식 출처 확인 → 작성 → 카드 이미지 → 검사 (보통 3~8분, 다른 일 하셔도 됩니다)${j.topic ? " · 주제: " + j.topic : ""}`, "var(--warn)");
+      return;
+    }
+    clearInterval(genTimer);
+    btn.disabled = false;
+    if (j.startedAt && j.finishedAt) {
+      if (j.newFiles && j.newFiles.length) setGenStatus(`✅ 새 원고 완성 (${fmtElapsed(j.finishedAt - j.startedAt)}) — ${j.newFiles.join(", ")} · 아래 목록에서 눌러 확인하세요`, "var(--ok)");
+      else if (j.authExpired) setGenStatus(`🔑 ${j.summary}`, "var(--bad)");
+      else setGenStatus(`❌ 원고가 만들어지지 않았습니다. 이유: ${(j.summary || j.log || "알 수 없음").slice(0, 220)}`, "var(--bad)");
+      refresh(false);
+    }
+  };
+  await tick();
+  genTimer = setInterval(tick, 5000);
+}
+
+/* ── 블로그 전환: 원고 큐·크롬 로그인·이웃 후보·생성 프롬프트가 모두 바뀐다 ── */
+async function switchBlog(key) {
+  await api("/api/config", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ active: key }) });
+  current = null; knownFiles = null;
+  document.getElementById("detail").innerHTML = '<div class="empty">👈 왼쪽 목록에서 원고를 선택하세요</div>';
+  await refresh(true); await loadNeighbors();
+}
+
+/* ── 설정 ── */
+async function saveBlog() {
+  const v = (id) => document.getElementById(id).value.trim();
+  if (!v("s_blogId") || !v("s_blogName") || !v("s_topic")) { alert("블로그 아이디, 블로그 이름, 주제 설명은 꼭 적어 주세요."); return; }
+  const body = { key: "main", blogId: v("s_blogId"), label: v("s_blogName"), blogName: v("s_blogName"), topicDescription: v("s_topic"), audience: v("s_audience"), intro: v("s_intro"), persona: v("s_persona"), keywords: v("s_keywords"), topicWords: v("s_topicWords"), siteUrl: v("s_siteUrl"), theme: { heading: v("s_heading"), number: v("s_number") } };
+  const r = await api("/api/blogs", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+  if (!r.ok) { alert(r.message || "저장 실패"); return; }
+  document.getElementById("setupStatus").textContent = "저장됨 ✓ 이제 [네이버 로그인 창 열기]로 로그인하고, 원고 탭에서 [새 원고 생성]을 눌러 보세요";
+  window._blogFilled = false; knownFiles = null;
+  await refresh(true); loadNeighbors(); loadToday();
+}
+async function saveKeys() {
+  const v = (id) => document.getElementById(id).value.trim();
+  const body = {};
+  if (v("k_customer") && v("k_access") && v("k_secret")) body.searchad = { customerId: v("k_customer"), accessLicense: v("k_access"), secretKey: v("k_secret") };
+  if (v("k_oauth")) body.oauthToken = v("k_oauth");
+  if (!Object.keys(body).length) { alert("저장할 키가 없습니다"); return; }
+  const r = await api("/api/keys", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+  alert(r.ok ? "저장했습니다 (키는 데이터 폴더에만 저장되고 화면에는 다시 표시되지 않습니다)" : "저장 실패");
+  ["k_access","k_secret","k_oauth"].forEach(id => document.getElementById(id).value = "");
+}
+async function saveGen() {
+  const dailyTarget = Number(document.getElementById("dailyTarget").value) || 3;
+  const publishMax = Number(document.getElementById("publishMax").value) || 0;
+  const publishTime = document.getElementById("publishTime").value.trim();
+  const publishTopic = document.getElementById("publishTopic").value.trim() || "비즈니스·경제";
+  await api("/api/config", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ dailyTarget, publishMax, publishTime, publishTopic }) });
+  alert(`저장: 하루 ${dailyTarget}편 생성, 발행 상한 ${publishMax === 0 ? "없음" : publishMax + "건"}, 예약 ${publishTime || "안 함"}, 주제 ${publishTopic}`); refresh(false);
+}
+async function saveCap() {
+  const cap = Number(document.getElementById("autoCap").value) || 30;
+  await api("/api/config", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ buddyDailyCap: cap }) });
+  alert(`하루 상한을 ${cap}건으로 저장했습니다`); loadNeighbors();
+}
+async function login() {
+  const r = await api("/api/login", { method:"POST" });
+  alert(r.message);
+}
+
+/* ── 이웃 ── */
+function esc(t) { return String(t ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+async function renderNeighbors(data) {
+  document.getElementById("nCount").textContent = `오늘 신청 ${data.todayCount}/${data.cap}`;
+  document.getElementById("autoCap").value = data.cap;
+  window._cands = data.candidates;
+  const box = document.getElementById("neighbors");
+  if (!data.candidates.length) { box.innerHTML = '<div class="empty">후보가 없습니다. 위의 [후보 새로 찾기]를 눌러주세요.</div>'; return; }
+  box.innerHTML = data.candidates.map((c, i) => `
+    <div class="cand">
+      <div class="t">${esc(c.blogName || c.nickName)} <span style="font-weight:600;color:var(--muted);font-size:12.5px">· ${esc(c.nickName)}</span> <span class="pill ok" style="margin-left:6px">적합도 ${c.score}</span></div>
+      <div class="m">주제: ${esc(c.keywords.join(", "))} · 이웃 ${c.buddyCount ?? "?"}명 · 최근 글 ${c.daysAgo ?? "?"}일 전 — "${esc((c.latestTitle||"").slice(0,40))}"</div>
+      <div class="btns">
+        <button class="small" onclick="openNeighbor(${i})">열기 (서로이웃·메시지 자동 입력)</button>
+        <button class="ghost small" onclick="requestedNeighbor(${i})">신청함</button>
+        <button class="gray small" onclick="skipNeighbor(${i})">건너뛰기</button>
+      </div>
+    </div>`).join("");
+}
+async function loadNeighbors() { renderNeighbors(await api("/api/neighbors")); loadIncoming(); }
+async function loadIncoming() {
+  const d = await api("/api/neighbors/incoming").catch(() => ({}));
+  const list = d.incoming || [];
+  document.getElementById("incomingCount").textContent = d.message ? "확인 실패: " + d.message : `${list.length}건 대기`;
+  document.getElementById("incomingList").innerHTML = list.length ? list.map(x => `· <b>${esc(x.nickname)}</b> <span style="color:var(--muted)">${esc(x.blogTitle)} · ${esc(x.date)} · "${esc((x.message||"").slice(0,40))}"</span>`).join("<br>") : '<span style="color:var(--muted)">대기 중인 신청이 없습니다.</span>';
+  document.getElementById("acceptBtn").disabled = !list.length;
+}
+async function acceptIncoming() {
+  const btn = document.getElementById("acceptBtn"); const st = document.getElementById("acceptStatus");
+  btn.disabled = true; st.textContent = "수락 중… (한 건에 30~60초, 댓글 포함)";
+  const r = await api("/api/neighbors/accept", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ welcome: document.getElementById("acceptWelcome").checked, max: 10 }) });
+  if (!r.ok) { st.textContent = "실패: " + (r.message || ""); btn.disabled = false; return; }
+  const okN = r.results.filter(x => x.accept).length, cN = r.results.filter(x => x.comment && !/실패|오류|없음|이미/.test(x.comment)).length;
+  st.textContent = `완료 — 수락 ${okN}/${r.processed}건, 환영 댓글 ${cN}건`;
+  document.getElementById("incomingList").innerHTML = r.results.map(x => `· ${x.accept ? "✅" : "✗"} <b>${esc(x.nickname)}</b> ${esc(x.message)}${x.comment ? `<br>&nbsp;&nbsp;💬 ${esc(x.comment.slice(0,90))}` : ""}`).join("<br>");
+  loadNeighbors();
+}
+async function refreshNeighbors() {
+  document.getElementById("neighbors").innerHTML = '<div class="empty">네이버 블로그 검색에서 후보를 하루 상한만큼 모으는 중… (1~2분)</div>';
+  renderNeighbors(await api("/api/neighbors/refresh", { method: "POST" }));
+}
+async function openNeighbor(i) {
+  const c = window._cands[i];
+  await navigator.clipboard.writeText(c.message);
+  const r = await api("/api/neighbors/open", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ blogId: c.blogId, message: c.message }) });
+  alert(r.message);
+}
+async function requestedNeighbor(i) {
+  const c = window._cands[i];
+  const r = await api("/api/neighbors/requested", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ blogId: c.blogId, name: c.blogName || c.nickName }) });
+  if (!r.ok) { alert(r.message); return; }
+  loadNeighbors();
+}
+async function skipNeighbor(i) {
+  const c = window._cands[i];
+  await api("/api/neighbors/skip", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ blogId: c.blogId }) });
+  loadNeighbors();
+}
+
+/* ── 완전 자동 ── */
+let autoTimer = null;
+async function startAuto() {
+  const count = Number(document.getElementById("autoCount").value) || 10;
+  if (!confirm(`${count}명에게 자동으로 서로이웃 신청을 보냅니다. 12~40초 간격으로 진행되며 언제든 [중단]할 수 있습니다. 시작할까요?`)) return;
+  const r = await api("/api/neighbors/auto/start", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ count }) });
+  document.getElementById("autoStatus").textContent = r.message;
+  if (r.ok) pollAuto();
+}
+async function stopAuto() {
+  const r = await api("/api/neighbors/auto/stop", { method:"POST" });
+  document.getElementById("autoStatus").textContent = r.message;
+}
+async function pollAuto() {
+  clearInterval(autoTimer);
+  autoTimer = setInterval(async () => {
+    const s = await api("/api/neighbors/auto/status");
+    const okCount = s.results.filter(r => r.ok).length;
+    const last = s.results[s.results.length - 1];
+    document.getElementById("autoStatus").textContent =
+      `${s.running ? "진행 중" : "완료"} — ${s.results.length}/${s.total} 처리, 성공 ${okCount}, 오늘 누적 ${s.todayCount}` +
+      (last && !last.ok ? ` · 최근: ${last.name} — ${last.message}` : "");
+    if (!s.running) {
+      clearInterval(autoTimer);
+      const fatal = s.results.find(r => r.fatal);
+      if (fatal) alert("⚠️ 자동 신청이 스스로 중단됐습니다:\n" + fatal.message);
+      loadNeighbors();
+    }
+  }, 3000);
+}
+
+/* ── 댓글 ── */
+let _cmts = [];
+let batchStop = false;
+function renderComments(data) {
+  document.getElementById("cCount").textContent = `오늘 댓글 ${data.todayCount}개 · 후보 ${data.candidates.length}개`;
+  _cmts = data.candidates;
+  const box = document.getElementById("comments");
+  if (!_cmts.length) { box.innerHTML = '<div class="empty">아직 댓글 달 새 글이 없습니다. 이웃이 늘면 여기 쌓입니다.</div>'; return; }
+  box.innerHTML = _cmts.map((c, i) => `
+    <div class="cand" id="cmt-${i}">
+      <input type="checkbox" class="chk" id="chk-${i}" ${c.topicHits.length ? "checked" : ""}>
+      <div class="t">${esc(c.title)}</div>
+      <div class="m">${esc(c.nickname)} · ${c.hoursAgo < 1 ? "방금" : c.hoursAgo + "시간 전"}${c.topicHits.length ? ` · <span class="pill ok">우리 주제 (${esc(c.topicHits.slice(0,3).join(", "))})</span>` : ""}</div>
+      <div class="brief">${esc(c.brief.slice(0, 160))}…</div>
+      <textarea id="txt-${i}" placeholder="[문안 제안]을 누르거나 직접 쓰세요"></textarea>
+      <div class="btns">
+        <button class="ghost small" onclick="suggestOne(${i})">문안 제안</button>
+        <button class="small" onclick="postOne(${i})">댓글 등록</button>
+        <button class="gray small" onclick="window.open('${esc(c.url)}','_blank')">글 열기</button>
+        <button class="gray small" onclick="skipComment(${i})">건너뛰기</button>
+        <span class="status" id="cst-${i}"></span>
+      </div>
+    </div>`).join("");
+}
+async function loadComments() {
+  document.getElementById("comments").innerHTML = '<div class="empty">이웃 피드를 읽는 중… (5~10초)</div>';
+  const d = await api("/api/comments/feed");
+  if (d.message && !d.candidates) { document.getElementById("comments").innerHTML = `<div class="empty">⚠️ ${esc(d.message)}</div>`; return; }
+  renderComments(d);
+}
+function cst(i, text, color) { const el = document.getElementById(`cst-${i}`); if (el) { el.textContent = text; el.style.color = color || ""; } }
+async function suggestOne(i) {
+  const c = _cmts[i]; cst(i, "문안 만드는 중… (20~30초)");
+  const r = await api("/api/comments/suggest", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ title: c.title, brief: c.brief }) });
+  if (r.text) { document.getElementById(`txt-${i}`).value = r.text; cst(i, "제안 완료 — 고쳐도 됩니다", "#15803d"); return true; }
+  cst(i, "제안 실패: " + (r.error || ""), "#b91c1c"); return false;
+}
+let suggestStop = false;
+async function suggestAll() {
+  const btn = document.getElementById("suggestAllBtn");
+  if (btn.dataset.running === "1") { suggestStop = true; btn.textContent = "중단 중…"; return; }
+  const idx = _cmts.map((_, i) => i).filter(i => document.getElementById(`chk-${i}`)?.checked && !document.getElementById(`txt-${i}`).value.trim());
+  if (!idx.length) { alert("문안을 만들 글이 없습니다. 체크된 글이 없거나 이미 문안이 채워져 있습니다."); return; }
+  suggestStop = false; btn.dataset.running = "1"; btn.textContent = "중단";
+  const box = document.getElementById("suggestProgress"); box.style.display = "block";
+  const t0 = Date.now(); let done = 0, fail = 0;
+  for (const i of idx) {
+    if (suggestStop) break;
+    document.getElementById("spCount").textContent = `${done + fail + 1} / ${idx.length}`;
+    document.getElementById("spNow").textContent = `지금 쓰는 글: ${_cmts[i].title.slice(0, 50)} (한 편에 20~30초)`;
+    document.getElementById("spBar").style.width = `${Math.round((done + fail) / idx.length * 100)}%`;
+    document.getElementById(`cmt-${i}`).scrollIntoView({ behavior: "smooth", block: "center" });
+    const ok = await suggestOne(i); if (ok) done++; else fail++;
+  }
+  document.getElementById("spBar").style.width = "100%";
+  document.getElementById("spCount").textContent = `${done + fail} / ${idx.length}`;
+  document.getElementById("spText").textContent = suggestStop ? `중단됨 — ${done}개 완료` : `완료 — ${done}개 문안 채움${fail ? `, ${fail}개 실패` : ""} (${fmtElapsed(Date.now() - t0)})`;
+  document.getElementById("spNow").textContent = "문안을 읽어보고 고친 뒤 [댓글 등록] 또는 [체크한 글에 순서대로 등록]을 누르세요.";
+  btn.dataset.running = "0"; btn.textContent = "모두 문안 제안";
+}
+async function postOne(i) {
+  const c = _cmts[i]; const text = document.getElementById(`txt-${i}`).value.trim();
+  if (text.length < 10) { cst(i, "댓글 내용을 먼저 채워주세요", "#b91c1c"); return false; }
+  cst(i, "등록 중… (10~20초)");
+  const r = await api("/api/comments/post", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ blogId: c.blogId, logNo: c.logNo, text, title: c.title, nickname: c.nickname }) });
+  cst(i, r.message, r.ok ? "#15803d" : "#b91c1c");
+  if (r.ok) { document.getElementById(`cmt-${i}`).classList.add("done"); document.getElementById(`chk-${i}`).checked = false; }
+  if (r.fatal) { alert("⚠️ " + r.message); batchStop = true; }
+  return r.ok;
+}
+async function skipComment(i) {
+  const c = _cmts[i];
+  await api("/api/comments/skip", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ blogId: c.blogId, logNo: c.logNo }) });
+  document.getElementById(`cmt-${i}`).remove();
+}
+function stopBatch() { batchStop = true; document.getElementById("batchStatus").textContent = "중단 요청됨"; }
+async function postChecked() {
+  const idx = _cmts.map((_, i) => i).filter(i => document.getElementById(`chk-${i}`)?.checked && document.getElementById(`txt-${i}`).value.trim().length >= 10);
+  if (!idx.length) { alert("체크돼 있고 문안이 채워진 글이 없습니다. 먼저 [모두 문안 제안]을 누르세요."); return; }
+  if (!confirm(`${idx.length}개 글에 순서대로 댓글을 답니다. 30~60초 간격이라 약 ${Math.ceil(idx.length * 0.75)}분 걸립니다. 시작할까요?`)) return;
+  batchStop = false;
+  const st = document.getElementById("batchStatus"); document.getElementById("batchBtn").disabled = true;
+  let done = 0;
+  for (const i of idx) {
+    if (batchStop) break;
+    st.textContent = `${done + 1}/${idx.length} 등록 중…`;
+    const ok = await postOne(i); if (ok) done++;
+    if (batchStop) break;
+    const wait = 30000 + Math.random() * 30000;
+    st.textContent = `${done}/${idx.length} 완료 · ${Math.round(wait/1000)}초 대기`;
+    await new Promise(r => setTimeout(r, wait));
+  }
+  st.textContent = batchStop ? `중단됨 — ${done}개 등록` : `완료 — ${done}/${idx.length}개 등록`;
+  document.getElementById("batchBtn").disabled = false;
+}
+
+loadToday();
+setInterval(loadToday, 60000);
+refresh(false);
+loadNeighbors();
+pollGenerate();
+setInterval(() => refresh(false), 30000);
+</script>
+</body>
+</html>
