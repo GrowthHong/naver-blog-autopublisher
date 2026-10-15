@@ -17,8 +17,9 @@ const LOG = path.join(paths.logs, `daily-${today}.log`);
 const log = async (m) => { const line = `[${new Date().toISOString()}] ${m}\n`; await appendFile(LOG, line); process.stdout.write(line); };
 if (!key) { await log("설정된 블로그가 없습니다 — 종료"); process.exit(0); }
 const raw = blogs[key];
-const blog = { key, label: raw.label || raw.blogId, blogId: raw.blogId, blogName: raw.blogName || raw.label || raw.blogId, topicDescription: raw.topicDescription, audience: raw.audience, siteUrl: raw.siteUrl, draftsDir: paths.drafts(key) };
+const blog = { key, postType: raw.postType || "info", label: raw.label || raw.blogId, blogId: raw.blogId, blogName: raw.blogName || raw.label || raw.blogId, topicDescription: raw.topicDescription, audience: raw.audience, siteUrl: raw.siteUrl, draftsDir: paths.drafts(key) };
 ensureDirs(key);
+if (blog.postType === "review" || blog.postType === "essay") { await log(`글 유형 "${blog.postType}"은 참고 메모가 필요해 자동 생성을 하지 않습니다. 발행기 원고 탭에서 메모와 함께 생성하세요.`); process.exit(0); }
 const target = Number(cfg.dailyTarget) || 1;
 const prev = await readFile(LOG, "utf8").catch(() => "");
 const done = (prev.match(/RUN-DONE exit=0/g) || []).length;

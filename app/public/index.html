@@ -195,11 +195,12 @@
           <div class="h"><h2><span class="n">1</span>원고 고르기</h2>
             <span style="display:flex;gap:6px;align-items:center"><span class="status" id="refreshStatus"></span>
               <button class="gray small" id="refreshBtn" onclick="refresh(true)">새로고침</button></span></div>
-          <p class="help">클로드가 쓴 원고가 여기 쌓입니다. 자동 작업을 등록했다면 매일 06:00에 설정한 편수만큼 추가되고(같은 주제의 사이트 글도 함께 배포), 지금 바로 필요하면 아래에서 만들 수 있습니다.</p>
+          <p class="help">클로드가 쓴 원고가 여기 쌓입니다. 자동 작업을 등록했다면 매일 06:00에 설정한 편수만큼 추가되고, 지금 바로 필요하면 아래에서 만들 수 있습니다.</p>
         </header>
         <div class="toolbar">
-          <input type="text" id="genTopic" placeholder="주제 (비우면 백로그에서 자동 선택)" style="flex:1;min-width:160px;font-size:13px;padding:7px 10px" />
+          <input type="text" id="genTopic" placeholder="주제 (비우면 자동 선택)" style="flex:1;min-width:160px;font-size:13px;padding:7px 10px" />
           <button class="small" id="genBtn" onclick="generateDraft()">새 원고 생성</button>
+          <textarea id="genNotes" rows="3" placeholder="참고 메모 (선택 — 리뷰·일상 유형은 필수): 내가 겪은 일, 실제 수치, 사진에 뭐가 찍혔는지, 좋았던 점·아쉬운 점. 여기 적은 것만 재료로 씁니다." style="width:100%;margin-top:6px;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit"></textarea>
         </div>
         <div class="banner" id="genStatus"></div>
         <div id="list"><div class="empty">불러오는 중…</div></div>
@@ -285,6 +286,7 @@
       <header><div class="h"><h2>블로그 설정</h2><span class="status" id="setupStatus"></span></div><p class="help">처음 한 번 채우면 됩니다. 원고 생성·이웃·댓글이 전부 이 내용을 바탕으로 돌아가니, 주제 설명은 구체적으로 적을수록 글이 좋아집니다.</p></header>
       <div class="setting"><div class="k">네이버 블로그 아이디 *<small>blog.naver.com/<b>여기</b> 부분</small></div><div class="v"><input type="text" id="s_blogId" placeholder="예: myblog123" style="width:220px" /></div></div>
       <div class="setting"><div class="k">블로그 이름 *<small>글 하단 고정 문구에 들어감 (예: "부모님 혜택 노트")</small></div><div class="v"><input type="text" id="s_blogName" style="width:260px" /></div></div>
+      <div class="setting"><div class="k">글 유형 *<small id="s_postTypeHint">글마다 적용되는 사실 규칙과 구조가 달라집니다</small></div><div class="v"><select id="s_postType" onchange="postTypeHint()" style="border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-weight:700"></select></div></div>
       <div class="setting"><div class="k">주제 설명 *<small>어떤 글을 쓰는 블로그인지 2~4문장. 다루는 범위, 다루지 않는 것, 글의 목적</small></div><div class="v"><textarea id="s_topic" rows="3" style="width:100%;max-width:560px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit" placeholder="예: 50~60대 부모님께 필요한 정부 혜택(연금·건강보험·복지)을 신청 방법 중심으로 정리한다. 투자·보험 상품 추천은 다루지 않는다."></textarea></div></div>
       <div class="setting"><div class="k">독자<small>누가 읽는지 한 줄</small></div><div class="v"><input type="text" id="s_audience" style="width:360px" placeholder="예: 부모님 혜택을 대신 알아보는 40~50대 자녀, 60대 본인" /></div></div>
       <div class="setting"><div class="k">내 소개 한 줄<small>서로이웃 신청 메시지에 들어감. "저는 ___인데" 꼴</small></div><div class="v"><input type="text" id="s_intro" style="width:360px" placeholder="예: 부모님 정부혜택 신청법을 정리하는 블로거" /></div></div>
@@ -413,6 +415,7 @@ async function refresh(manual) {
     setRefreshStatus("설정이 필요합니다");
     document.getElementById("accountId").textContent = "설정 필요";
     document.getElementById("setupStatus").textContent = "처음 오셨군요 — 아래를 채우고 저장하세요";
+    loadPostTypes("info");
     showTab("settings");
     document.getElementById("draftCount").textContent = 0;
     return;
@@ -421,7 +424,7 @@ async function refresh(manual) {
   if (state.blog && !window._blogFilled) {
     const b = state.blog; window._blogFilled = true;
     const set = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = Array.isArray(v) ? v.join(", ") : v; };
-    set("s_blogId", b.blogId); set("s_blogName", b.blogName); set("s_topic", b.topicDescription); set("s_audience", b.audience); set("s_intro", b.intro); set("s_persona", b.persona); set("s_keywords", b.keywords); set("s_topicWords", b.topicWords); set("s_siteUrl", b.siteUrl); set("s_heading", b.theme?.heading); set("s_number", b.theme?.number);
+    set("s_blogId", b.blogId); set("s_blogName", b.blogName); set("s_topic", b.topicDescription); set("s_audience", b.audience); set("s_intro", b.intro); set("s_persona", b.persona); set("s_keywords", b.keywords); set("s_topicWords", b.topicWords); set("s_siteUrl", b.siteUrl); loadPostTypes(b.postType); set("s_heading", b.theme?.heading); set("s_number", b.theme?.number);
   }
   const sel = document.getElementById("blogSelect");
   if (state.blogs && sel.options.length !== state.blogs.length) {
@@ -502,6 +505,16 @@ async function archive() {
   refresh(false);
 }
 
+/* ── 글 유형 목록 ── */
+let _postTypes = null;
+async function loadPostTypes(selected) {
+  const sel = document.getElementById("s_postType");
+  if (!_postTypes) { const d = await api("/api/blogs").catch(() => ({})); _postTypes = d.postTypes || {}; sel.innerHTML = Object.entries(_postTypes).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join(""); }
+  if (selected) sel.value = selected;
+  postTypeHint();
+}
+function postTypeHint() { const k = document.getElementById("s_postType").value; document.getElementById("s_postTypeHint").textContent = _postTypes?.[k]?.hint || ""; }
+
 /* ── 새 원고 생성 ── */
 let genTimer = null;
 function fmtElapsed(ms) { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}분 ${String(s % 60).padStart(2, "0")}초`; }
@@ -513,7 +526,8 @@ function setGenStatus(text, color) {
 }
 async function generateDraft() {
   const topic = document.getElementById("genTopic").value.trim();
-  const r = await api("/api/drafts/generate", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ topic }) });
+  const notes = document.getElementById("genNotes").value.trim();
+  const r = await api("/api/drafts/generate", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ topic, notes }) });
   setGenStatus(r.message, r.ok ? "var(--warn)" : "var(--bad)");
   if (r.ok) pollGenerate();
 }
@@ -524,7 +538,7 @@ async function pollGenerate() {
     const j = await api("/api/drafts/generate/status");
     if (j.running) {
       btn.disabled = true;
-      setGenStatus(`⏳ 원고 만드는 중 ${fmtElapsed(Date.now() - j.startedAt)} — 주제 선정 → 공식 출처 확인 → 작성 → 카드 이미지 → 검사 (보통 3~8분, 다른 일 하셔도 됩니다)${j.topic ? " · 주제: " + j.topic : ""}`, "var(--warn)");
+      setGenStatus(`⏳ 원고 만드는 중 ${fmtElapsed(Date.now() - j.startedAt)} — 주제 선정 → 자료 확인 → 작성 → 카드 이미지 → 검사 (보통 3~8분, 다른 일 하셔도 됩니다)${j.topic ? " · 주제: " + j.topic : ""}`, "var(--warn)");
       return;
     }
     clearInterval(genTimer);
@@ -552,7 +566,7 @@ async function switchBlog(key) {
 async function saveBlog() {
   const v = (id) => document.getElementById(id).value.trim();
   if (!v("s_blogId") || !v("s_blogName") || !v("s_topic")) { alert("블로그 아이디, 블로그 이름, 주제 설명은 꼭 적어 주세요."); return; }
-  const body = { key: "main", blogId: v("s_blogId"), label: v("s_blogName"), blogName: v("s_blogName"), topicDescription: v("s_topic"), audience: v("s_audience"), intro: v("s_intro"), persona: v("s_persona"), keywords: v("s_keywords"), topicWords: v("s_topicWords"), siteUrl: v("s_siteUrl"), theme: { heading: v("s_heading"), number: v("s_number") } };
+  const body = { key: "main", blogId: v("s_blogId"), label: v("s_blogName"), blogName: v("s_blogName"), postType: v("s_postType") || "info", topicDescription: v("s_topic"), audience: v("s_audience"), intro: v("s_intro"), persona: v("s_persona"), keywords: v("s_keywords"), topicWords: v("s_topicWords"), siteUrl: v("s_siteUrl"), theme: { heading: v("s_heading"), number: v("s_number") } };
   const r = await api("/api/blogs", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
   if (!r.ok) { alert(r.message || "저장 실패"); return; }
   document.getElementById("setupStatus").textContent = "저장됨 ✓ 이제 [네이버 로그인 창 열기]로 로그인하고, 원고 탭에서 [새 원고 생성]을 눌러 보세요";

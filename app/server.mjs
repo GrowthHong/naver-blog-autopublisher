@@ -65,6 +65,7 @@ function normalizeBlog(key, raw) {
     keywords: list(raw.keywords),                                  // 이웃 후보 검색어
     topicWords: list(raw.topicWords),                              // 댓글 후보 우선순위 단어
     siteUrl: String(raw.siteUrl || "").trim(),                     // 연동 사이트(선택) — 딥링크·유입 통계
+    postType: raw.postType || "info",                           // 글 유형: info·review·howto·trend·essay (prompts/post-types.json)
     styleProfile: raw.styleProfile || "default",
     theme: raw.theme || DEFAULT_THEME,
     draftsDir: paths.drafts(key), profile: paths.profile(key),
@@ -154,7 +155,8 @@ const server = http.createServer(async (req, res) => {
     }
     // ── 첫 실행 설정 / 블로그 설정 저장 ──
     if (req.method === "GET" && url.pathname === "/api/blogs") {
-      return json(res, 200, { blogs: await loadBlogs(), config: await loadConfig() });
+      const types = JSON.parse(await readFile(path.join(paths.prompts, "post-types.json"), "utf8").catch(() => "{}"));
+      return json(res, 200, { blogs: await loadBlogs(), config: await loadConfig(), postTypes: Object.fromEntries(Object.entries(types).map(([k, v]) => [k, { label: v.label, hint: v.hint }])) });
     }
     if (req.method === "POST" && url.pathname === "/api/blogs") {
       const body = await readBody(req);
@@ -278,9 +280,9 @@ const server = http.createServer(async (req, res) => {
     }
     // ── 새 원고 즉시 생성 (클로드 CLI 실행) ──
     if (req.method === "POST" && url.pathname === "/api/drafts/generate") {
-      const { topic } = await readBody(req);
+      const { topic, notes } = await readBody(req);
       const blog = await activeBlog();
-      return json(res, 200, await startGeneration(String(topic ?? ""), blog));
+      return json(res, 200, await startGeneration(String(topic ?? ""), blog, String(notes ?? "")));
     }
     if (req.method === "GET" && url.pathname === "/api/drafts/generate/status") {
       return json(res, 200, generateJob);
