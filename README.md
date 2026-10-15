@@ -1,5 +1,10 @@
 # 네이버 블로그 자동발행기 (로컬 설치형)
 
+```bash
+git clone https://github.com/GrowthHong/naver-blog-autopublisher.git
+cd naver-blog-autopublisher && zsh install.sh && npm start
+```
+
 내 맥에서 돌아가는 네이버 블로그 운영 도구입니다. 서버에 아무것도 보내지 않고, 내 크롬과 내 클로드로만 동작합니다.
 
 - **원고 생성**: 클로드가 주제를 고르고 공식 출처를 확인해 원고 1편 + 카드 이미지 4~5장을 만듭니다
