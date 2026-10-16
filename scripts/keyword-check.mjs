@@ -77,7 +77,12 @@ async function openApiDocs(k) {
   try {
     const all = await (await fetch(`${req.url}?query=${encodeURIComponent(k)}&display=1`, { headers: req.headers })).json();
     const recentRes = await (await fetch(`${req.url}?query=${encodeURIComponent(k)}&display=100&sort=date`, { headers: req.headers })).json();
-    if (all.total === undefined && all.items === undefined) { console.error(`오픈API 응답 이상: ${JSON.stringify(all).slice(0, 160)}`); return null; }
+    if (all.total === undefined && all.items === undefined) {
+      const code = all?.error?.errorCode ?? all?.errorCode;
+      if (code === "210") console.error("오픈API: 이 Application에 검색 API 구독이 없습니다 → 네이버클라우드 콘솔 NAVER API HUB → Application → 해당 앱 → 구독/서비스 선택에서 '검색' 추가");
+      else console.error(`오픈API 응답 이상: ${JSON.stringify(all).slice(0, 160)}`);
+      return null;
+    }
     const cutoff = Date.now() - 30 * 864e5;
     const items = recentRes.items ?? [];
     const within = items.filter((it) => { const d = it.postdate; return d && new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`).getTime() >= cutoff; }).length;
