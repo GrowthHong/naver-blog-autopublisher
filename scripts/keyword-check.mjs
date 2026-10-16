@@ -65,18 +65,25 @@ async function autocomplete(k) {
 // 네이버 오픈API(블로그 검색) — 실제 총 문서수. <데이터폴더>/naver-openapi.json {clientId, clientSecret}
 let OPENAPI = null;
 try { OPENAPI = JSON.parse(await readFile(`${DATA_DIR}/naver-openapi.json`, "utf8")); } catch { OPENAPI = null; }
+// 키 형식 두 가지: ① NAVER API HUB(네이버클라우드, 2026-07-31 이후 신규 발급은 이것뿐) {keyId, key}  ② 구 개발자센터 {clientId, clientSecret}
+function openApiReq(path) {
+  if (OPENAPI?.keyId && OPENAPI?.key) return { url: `https://naverapihub.apigw.ntruss.com/search/v1/${path}`, headers: { "X-NCP-APIGW-API-KEY-ID": OPENAPI.keyId, "X-NCP-APIGW-API-KEY": OPENAPI.key } };
+  if (OPENAPI?.clientId) return { url: `https://openapi.naver.com/v1/search/${path}.json`, headers: { "X-Naver-Client-Id": OPENAPI.clientId, "X-Naver-Client-Secret": OPENAPI.clientSecret } };
+  return null;
+}
 async function openApiDocs(k) {
-  if (!OPENAPI?.clientId) return null;
-  const h = { "X-Naver-Client-Id": OPENAPI.clientId, "X-Naver-Client-Secret": OPENAPI.clientSecret };
+  const req = openApiReq("blog");
+  if (!req) return null;
   try {
-    const all = await (await fetch(`https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(k)}&display=1`, { headers: h })).json();
-    const recentRes = await (await fetch(`https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(k)}&display=100&sort=date`, { headers: h })).json();
+    const all = await (await fetch(`${req.url}?query=${encodeURIComponent(k)}&display=1`, { headers: req.headers })).json();
+    const recentRes = await (await fetch(`${req.url}?query=${encodeURIComponent(k)}&display=100&sort=date`, { headers: req.headers })).json();
+    if (all.total === undefined && all.items === undefined) { console.error(`오픈API 응답 이상: ${JSON.stringify(all).slice(0, 160)}`); return null; }
     const cutoff = Date.now() - 30 * 864e5;
     const items = recentRes.items ?? [];
     const within = items.filter((it) => { const d = it.postdate; return d && new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`).getTime() >= cutoff; }).length;
     // 최신 100건이 모두 30일 안이면 그 이상이라는 뜻 → 100+ 로 표기
     return { total: all.total ?? null, recent30: within >= 100 ? 100 : within, recentCapped: within >= 100 };
-  } catch { return null; }
+  } catch (e) { console.error(`오픈API 호출 실패: ${String(e.message).slice(0, 100)}`); return null; }
 }
 
 async function blogDocs(k, period) {
