@@ -313,8 +313,8 @@
         <div class="v"><input type="number" id="publishMax" value="0" min="0" max="20" style="width:90px" /><button class="ghost small" onclick="saveGen()">저장</button></div>
       </div>
       <div class="setting">
-        <div class="k">예약 발행 시각<small>자동 입력 때 발행 창에 "예약"을 켜고 이 시각으로 채웁니다. 하루 한 편씩 다음 빈 날에 배정. 비우면 예약 안 함. 10분 단위</small></div>
-        <div class="v"><input type="text" id="publishTime" value="20:30" placeholder="20:30" style="width:90px" /> 주제 <input type="text" id="publishTopic" value="비즈니스·경제" style="width:140px" /><button class="ghost small" onclick="saveGen()">저장</button></div>
+        <div class="k">예약 발행 시각<small>쉼표로 여러 개 적으면 하루 발행 수가 됩니다. 예: 08:30,20:30 → 하루 2편. 자동 입력 때 발행 창에 "예약"을 켜고 그날 비어 있는 슬롯부터 채우며, 예약 대신 "현재"로 바로 발행해도 블로그 글 목록과 대조해 그날 발행 수에 넣습니다. 비우면 예약 안 함. 10분 단위</small></div>
+        <div class="v"><input type="text" id="publishTime" value="20:30" placeholder="20:30 또는 08:30,20:30" style="width:150px" /> 주제 <input type="text" id="publishTopic" value="비즈니스·경제" style="width:140px" /><button class="ghost small" onclick="saveGen()">저장</button></div>
       </div>
       <div class="setting">
         <div class="k">서로이웃 하루 상한<small>완전 자동·수동 기록 합산. 권장 10~30</small></div>
@@ -365,7 +365,8 @@ async function loadToday() {
   let d; try { d = await api("/api/today"); } catch { document.getElementById("todoList").innerHTML = '<li class="empty">서버 응답 없음</li>'; return; }
   const q = d.queue;
   document.getElementById("tQueue").innerHTML = `${q.count}<small>편</small>`;
-  document.getElementById("tQueueD").textContent = q.nextSlot ? `다음 빈 예약 ${q.nextSlot.slice(5)}${q.scheduledDays.length ? ` · 예약됨 ${q.scheduledDays.length}일` : ""}` : "예약 발행 꺼짐";
+  const pb = d.publishing || {};
+  document.getElementById("tQueueD").textContent = q.nextSlot ? `오늘 발행 ${pb.todayCount ?? 0}/${pb.perDay ?? "?"} · 다음 빈 슬롯 ${q.nextSlot.slice(5)}${pb.upcoming?.length ? ` · 예약 ${pb.upcoming.length}편` : ""}` : "예약 발행 꺼짐";
   document.getElementById("tBuddy").innerHTML = `${d.incoming ?? "?"}<small>건 대기</small>`;
   document.getElementById("tBuddyD").textContent = `오늘 댓글 ${d.commentsToday}개 · 서이추 ${d.buddyToday}/${d.buddyCap}`;
   if (d.stats) { const diff = d.stats.cvPrev7 == null ? "" : ` (전주 ${d.stats.cvPrev7})`; document.getElementById("tStats").innerHTML = `${d.stats.cv7}<small>회</small>`; document.getElementById("tStatsD").textContent = `${d.stats.lastDate.slice(5)} ${d.stats.lastCv}회${diff}${d.stats.topQuery ? ` · "${d.stats.topQuery}"` : ""}`; }
@@ -378,7 +379,10 @@ async function loadToday() {
   const rows = [];
   rows.push(`<div class="row"><span>색인</span><span class="${d.index.problems.length ? "bad" : "ok"}">${d.index.problems.length ? `누락 ${d.index.problems.length}편` : "정상"}${d.index.waiting ? ` <span class="mut">· 대기 ${d.index.waiting}</span>` : ""}</span></div>`);
   rows.push(`<div class="row"><span>중복 원고</span><span class="${q.dupes.length ? "bad" : "ok"}">${q.dupes.length ? `${q.dupes.length}편 (큐에 남음)` : "없음"}</span></div>`);
-  rows.push(`<div class="row"><span>예약된 발행</span><span class="${q.scheduledDays.length ? "ok" : "mut"}">${q.scheduledDays.length ? q.scheduledDays.map(x => x.slice(5)).join(", ") : "없음"}</span></div>`);
+  rows.push(`<div class="row"><span>오늘 발행</span><span class="${(pb.todayCount ?? 0) >= (pb.perDay ?? 1) ? "ok" : "mut"}">${pb.todayCount ?? 0}/${pb.perDay ?? "?"}${pb.todayPublished?.length ? ` <span class="mut">· ${pb.todayPublished.map(x => x.at.slice(11)).join(", ")} 올라감</span>` : ""}</span></div>`);
+  rows.push(`<div class="row"><span>예약된 발행</span><span class="${pb.upcoming?.length ? "ok" : "mut"}" style="text-align:right;max-width:70%">${pb.upcoming?.length ? pb.upcoming.map(x => `${x.at.slice(5)} ${esc((x.title || x.file).slice(0, 12))}`).join("<br>") : "없음"}</span></div>`);
+  if (pb.immediate?.length) rows.push(`<div class="row"><span>바로 발행함</span><span class="mut" style="text-align:right;max-width:70%">${pb.immediate.map(x => `${esc(x.title.slice(0, 14))} (${x.publishedAt.slice(5)})`).join("<br>")}</span></div>`);
+  if (pb.stale?.length) rows.push(`<div class="row"><span>예약 지남·미발행</span><span class="bad" style="text-align:right;max-width:70%">${pb.stale.map(x => esc(x.title.slice(0, 14))).join("<br>")}</span></div>`);
   if (d.season) rows.push(`<div class="row"><span>시즌(${d.season.month}월)</span><span class="mut" style="text-align:right;max-width:60%">지금 쓸 것: ${esc(d.season.writeNow.slice(0, 4).join(", "))}${d.season.writeNow.length > 4 ? " 외" : ""}</span></div>`);
   document.getElementById("todayChecks").innerHTML = rows.join("");
   const ib = document.getElementById("incomingBadge"); ib.textContent = d.incoming || 0; ib.style.display = d.incoming ? "" : "none";
@@ -435,7 +439,7 @@ async function refresh(manual) {
     sel.innerHTML = state.blogs.map(b => `<option value="${b.key}">${b.label}</option>`).join("");
   }
   if (state.active) sel.value = state.active;
-  if (state.userCfg) { document.getElementById("dailyTarget").value = state.userCfg.dailyTarget ?? 1; document.getElementById("publishMax").value = state.userCfg.publishMax ?? 0; document.getElementById("publishTime").value = state.userCfg.publishTime ?? "20:30"; document.getElementById("publishTopic").value = state.userCfg.publishTopic ?? "비즈니스·경제"; }
+  if (state.userCfg) { document.getElementById("dailyTarget").value = state.userCfg.dailyTarget ?? 1; document.getElementById("publishMax").value = state.userCfg.publishMax ?? 0; document.getElementById("publishTime").value = state.userCfg.publishTimes ?? state.userCfg.publishTime ?? "20:30"; document.getElementById("publishTopic").value = state.userCfg.publishTopic ?? "비즈니스·경제"; }
   document.title = (state.blogs?.find(b => b.key === state.active)?.label || "블로그") + " 자동발행기";
   document.getElementById("draftCount").textContent = files.length;
   const list = document.getElementById("list");
@@ -593,7 +597,7 @@ async function saveGen() {
   const publishMax = Number(document.getElementById("publishMax").value) || 0;
   const publishTime = document.getElementById("publishTime").value.trim();
   const publishTopic = document.getElementById("publishTopic").value.trim() || "비즈니스·경제";
-  await api("/api/config", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ dailyTarget, publishMax, publishTime, publishTopic }) });
+  await api("/api/config", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ dailyTarget, publishMax, publishTimes: publishTime, publishTopic }) });
   alert(`저장: 하루 ${dailyTarget}편 생성, 발행 상한 ${publishMax === 0 ? "없음" : publishMax + "건"}, 예약 ${publishTime || "안 함"}, 주제 ${publishTopic}`); refresh(false);
 }
 async function saveCap() {

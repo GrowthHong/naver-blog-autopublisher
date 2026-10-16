@@ -22,26 +22,81 @@ ensureDirs();
 const CONFIG_PATH = paths.config;
 async function loadUserCfg() { try { return JSON.parse(await readFile(CONFIG_PATH, "utf8")); } catch { return {}; } }
 
-// ── 예약 발행 슬롯: 매일 같은 시각(기본 20:30)에 한 편씩. 이미 예약된 날짜는 건너뛴다 ──
+// ── 예약 발행 슬롯 ──
+// 하루 발행 수 = 설정한 예약 시각 개수(기본 08:30, 20:30 → 2편). 네이버는 예약 글 목록을 API로 내주지 않으므로,
+// 우리가 기록한 예약(schedule.json)을 매번 실제 블로그 글 목록과 대조해 정리한다:
+//  - 예약 시각보다 먼저 올라간 글 = 사용자가 "현재"로 바로 발행함 → 예약에서 빼고 그날 발행 수에 넣는다
+//  - 예약 시각이 3시간 넘게 지났는데 안 올라온 글 = 발행 버튼이 안 눌렸거나 제목이 바뀜 → 예약에서 빼고 알려 준다
+// 그날 발행 수(올라간 글 + 남은 예약)가 하루 슬롯 수에 차면 다음 날로 넘어간다.
 const SCHEDULE_PATH = paths.state("schedule");
 async function loadSchedule() { try { return JSON.parse(await readFile(SCHEDULE_PATH, "utf8")); } catch { return {}; } }
-async function recordSchedule(file, at) { const s = await loadSchedule(); s[file] = at; await writeFile(SCHEDULE_PATH, JSON.stringify(s, null, 2)); }
-async function nextPublishSlot(hhmm) {
-  const [h, m] = hhmm.split(":").map(Number);
+async function recordSchedule(file, at, title) { const s = await loadSchedule(); s[file] = { at, title }; await writeFile(SCHEDULE_PATH, JSON.stringify(s, null, 2)); }
+function parseTimes(u) {
+  const raw = u.publishTimes !== undefined ? u.publishTimes : (u.publishTime !== undefined ? u.publishTime : "20:30");
+  if (raw === "" || raw === null) return []; // 예약 안 함(즉시 발행)
+  return [...new Set(String(raw).split(/[,\s]+/).filter((t) => /^\d{2}:\d{2}$/.test(t)))].sort();
+}
+const normTitle = (t) => String(t || "").replace(/\s+/g, "");
+const kstDateOf = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
+let _pubCache = { blogId: null, at: 0, items: [] };
+async function fetchPublished(blogId) {
+  if (_pubCache.blogId === blogId && Date.now() - _pubCache.at < 60000) return _pubCache.items;
+  try {
+    const r = await fetch(`https://m.blog.naver.com/api/blogs/${blogId}/post-list?categoryNo=0&itemCount=30&page=1`, { headers: { "User-Agent": "Mozilla/5.0", Referer: `https://m.blog.naver.com/${blogId}` } });
+    const items = ((await r.json())?.result?.items || []).map((x) => ({ logNo: String(x.logNo), title: String(x.titleWithInspectMessage || ""), addDate: Number(x.addDate) || 0 }));
+    _pubCache = { blogId, at: Date.now(), items };
+  } catch { /* 네트워크 없음 → 이전 캐시 */ }
+  return _pubCache.items;
+}
+async function titleOfFile(blog, file) {
+  try { return (await readFile(path.join(blog.draftsDir, file), "utf8")).split("\n")[0].replace(/^제목:\s*/, "").trim(); } catch { /* 보관됨 */ }
+  try { const pd = publishedDirOf(blog); const f = (await readdir(pd)).find((x) => x.endsWith(file)); if (f) return (await readFile(path.join(pd, f), "utf8")).split("\n")[0].replace(/^제목:\s*/, "").trim(); } catch { /* 없음 */ }
+  return null;
+}
+async function reconcileSchedule(blog) {
   const s = await loadSchedule();
-  const taken = new Set(Object.values(s).map((iso) => new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(0, 10)));
-  const nowKst = new Date(Date.now() + 9 * 3600000);
-  // 오늘 예약 시각이 아직 1시간 이상 남았으면 오늘부터, 아니면 내일부터
-  let day = new Date(Date.UTC(nowKst.getUTCFullYear(), nowKst.getUTCMonth(), nowKst.getUTCDate()));
-  const todaySlotMin = h * 60 + m, nowMin = nowKst.getUTCHours() * 60 + nowKst.getUTCMinutes();
-  if (nowMin > todaySlotMin - 60) day = new Date(day.getTime() + 86400000);
-  for (let i = 0; i < 60; i += 1) {
-    const key = day.toISOString().slice(0, 10);
-    if (!taken.has(key)) {
-      const at = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h - 9, m)).toISOString(); // KST → UTC
-      return { at, kst: `${key} ${hhmm}`, queueAhead: [...taken].filter((d) => d >= nowKst.toISOString().slice(0, 10)).length };
+  const published = await fetchPublished(blog.blogId);
+  const byTitle = new Map(published.map((p) => [normTitle(p.title), p]));
+  const now = Date.now(); const reserved = []; const notes = []; let changed = false;
+  for (const [file, v] of Object.entries(s)) {
+    const at = typeof v === "string" ? v : v?.at; if (!at) { delete s[file]; changed = true; continue; }
+    let title = typeof v === "string" ? null : v.title;
+    if (!title) { title = await titleOfFile(blog, file); if (title) { s[file] = { at, title }; changed = true; } }
+    const atMs = new Date(at).getTime();
+    const pub = title ? byTitle.get(normTitle(title)) : null;
+    if (pub) {
+      if (pub.addDate < atMs - 10 * 60000) notes.push({ kind: "immediate", file, title, at, publishedAt: pub.addDate });
+      delete s[file]; changed = true; continue;
     }
-    day = new Date(day.getTime() + 86400000);
+    if (atMs < now - 3 * 3600000) { notes.push({ kind: "stale", file, title, at }); delete s[file]; changed = true; continue; }
+    reserved.push({ file, title, at });
+  }
+  if (changed) await writeFile(SCHEDULE_PATH, JSON.stringify(s, null, 2));
+  const occ = {};
+  for (const p of published) { const d = kstDateOf(p.addDate); occ[d] = (occ[d] || 0) + 1; }
+  for (const x of reserved) { const d = kstDateOf(new Date(x.at).getTime()); occ[d] = (occ[d] || 0) + 1; }
+  reserved.sort((a, b) => a.at.localeCompare(b.at));
+  return { reserved, published, notes, occ };
+}
+async function nextPublishSlot(times, blog) {
+  if (!times.length) return { at: null };
+  const { reserved, occ, notes } = await reconcileSchedule(blog);
+  const perDay = times.length;
+  const taken = new Set(reserved.map((x) => new Date(new Date(x.at).getTime() + 9 * 3600000).toISOString().slice(0, 16).replace("T", " ")));
+  const nowMs = Date.now(); const nowKst = new Date(nowMs + 9 * 3600000);
+  let day = Date.UTC(nowKst.getUTCFullYear(), nowKst.getUTCMonth(), nowKst.getUTCDate());
+  for (let i = 0; i < 90; i += 1) {
+    const key = new Date(day).toISOString().slice(0, 10);
+    if ((occ[key] || 0) < perDay) {
+      for (const t of times) {
+        const [h, m] = t.split(":").map(Number);
+        const atMs = day + (h * 60 + m) * 60000 - 9 * 3600000; // KST → UTC
+        if (atMs < nowMs + 20 * 60000) continue; // 20분 안쪽 슬롯은 못 잡는다
+        if (taken.has(`${key} ${t}`)) continue;
+        return { at: new Date(atMs).toISOString(), kst: `${key} ${t}`, perDay, dayCount: occ[key] || 0, queueAhead: reserved.length, notes };
+      }
+    }
+    day += 86400000;
   }
   return { at: null };
 }
@@ -169,6 +224,7 @@ const server = http.createServer(async (req, res) => {
       const config = await loadConfig();
       if (!config.active || !blogsNow[config.active]) config.active = key;
       if (config.publishTime === undefined) config.publishTime = "20:30";
+      if (config.publishTimes === undefined) config.publishTimes = config.publishTime || "20:30";
       if (!config.dailyTarget) config.dailyTarget = 1;
       await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
       await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
@@ -201,9 +257,13 @@ const server = http.createServer(async (req, res) => {
       if (body.buddyDailyCap !== undefined) {
         config.buddyDailyCap = Math.max(1, Math.min(100, Number(body.buddyDailyCap) || 30));
       }
-      if (body.dailyTarget !== undefined || body.publishMax !== undefined || body.publishTime !== undefined || body.publishTopic !== undefined) {
+      if (body.dailyTarget !== undefined || body.publishMax !== undefined || body.publishTime !== undefined || body.publishTimes !== undefined || body.publishTopic !== undefined) {
         const u = config;
-        if (body.publishTime !== undefined) u.publishTime = /^\d{2}:\d{2}$/.test(String(body.publishTime)) ? String(body.publishTime) : "";
+        if (body.publishTimes !== undefined || body.publishTime !== undefined) {
+          const raw = body.publishTimes !== undefined ? body.publishTimes : body.publishTime;
+          const list = [...new Set(String(raw ?? "").split(/[,\s]+/).filter((t) => /^\d{2}:\d{2}$/.test(t)))].sort();
+          u.publishTimes = list.join(","); u.publishTime = list[0] || "";
+        }
         if (body.publishTopic !== undefined) u.publishTopic = String(body.publishTopic || "비즈니스·경제");
         if (body.dailyTarget !== undefined) u.dailyTarget = Math.max(1, Math.min(10, Number(body.dailyTarget) || 3));
         if (body.publishMax !== undefined) u.publishMax = Math.max(0, Math.min(20, Number(body.publishMax) || 0));
@@ -227,12 +287,14 @@ const server = http.createServer(async (req, res) => {
       const u = await loadUserCfg();
       const publish = { topic: u.publishTopic ?? "비즈니스·경제", scheduleAt: null };
       let slotNote = null;
-      if (u.publishTime !== "" && u.publishTime !== null) { // 기본 20:30, ""면 예약 안 함(즉시 발행)
-        const slot = await nextPublishSlot(u.publishTime || "20:30");
+      const times = parseTimes(u); // 비어 있으면 예약 안 함(즉시 발행)
+      if (times.length) {
+        const slot = await nextPublishSlot(times, blog);
+        if (!slot.at) return json(res, 400, { ok: false, message: "앞으로 90일 안에 빈 예약 슬롯이 없습니다. 설정의 예약 시각을 확인하세요." });
         publish.scheduleAt = slot.at; slotNote = slot;
       }
       const result = await fillEditor({ blogId: blog.blogId, title, body, imagesDir: path.join(blog.draftsDir, "images"), profile: blog.profile, theme: blog.theme, publish });
-      if (result.ok && slotNote) await recordSchedule(path.basename(file), slotNote.at);
+      if (result.ok && slotNote) await recordSchedule(path.basename(file), slotNote.at, title);
       return json(res, 200, { ...result, schedule: slotNote });
     }
     if (req.method === "POST" && url.pathname === "/api/archive") {
@@ -296,15 +358,26 @@ const server = http.createServer(async (req, res) => {
       const kstOf = (iso) => new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(0, 16).replace("T", " ");
       // 큐 + 예약
       const files = existsSync(blog.draftsDir) ? (await readdir(blog.draftsDir)).filter((f) => /^post-.*\.md$/.test(f)).sort() : [];
-      const schedule = await loadSchedule();
+      const u = await loadUserCfg();
+      const times = parseTimes(u);
+      const sched = await reconcileSchedule(blog); // 실제 글 목록과 대조해 정리된 예약
+      const reservedByFile = Object.fromEntries(sched.reserved.map((x) => [x.file, x.at]));
       const queue = [];
       for (const f of files) {
         const title = (await readFile(path.join(blog.draftsDir, f), "utf8")).split("\n")[0].replace(/^제목:\s*/, "").trim();
-        queue.push({ file: f, title, scheduled: schedule[f] ? kstOf(schedule[f]) : null });
+        queue.push({ file: f, title, scheduled: reservedByFile[f] ? kstOf(reservedByFile[f]) : null });
       }
-      const u = await loadUserCfg();
-      const next = u.publishTime === "" ? null : await nextPublishSlot(u.publishTime || "20:30");
-      const scheduledDays = Object.values(schedule).map((iso) => kstOf(iso).slice(0, 10)).filter((d) => d >= todayKst).sort();
+      const next = times.length ? await nextPublishSlot(times, blog) : null;
+      const scheduledDays = [...new Set(sched.reserved.map((x) => kstOf(x.at).slice(0, 10)))].filter((d) => d >= todayKst).sort();
+      const perDay = times.length;
+      const publishing = {
+        perDay, times,
+        todayCount: sched.occ[todayKst] || 0,
+        todayPublished: sched.published.filter((p) => kstDateOf(p.addDate) === todayKst).map((p) => ({ title: p.title, at: kstOf(p.addDate) })),
+        upcoming: sched.reserved.map((x) => ({ file: x.file, title: x.title, at: kstOf(x.at) })),
+        immediate: sched.notes.filter((n) => n.kind === "immediate").map((n) => ({ title: n.title, plannedAt: kstOf(n.at), publishedAt: kstOf(n.publishedAt) })),
+        stale: sched.notes.filter((n) => n.kind === "stale").map((n) => ({ file: n.file, title: n.title, plannedAt: kstOf(n.at) })),
+      };
       // 블로그에 이미 올라간 제목 (중복 발행 경고) — 공개 API
       let dupes = [];
       try {
@@ -340,7 +413,16 @@ const server = http.createServer(async (req, res) => {
       if (incoming) todo.push({ tab: "neighbors", text: `받은 서로이웃 신청 ${incoming}건 → 수락 + 환영 댓글`, level: "do" });
       if (idxProblems.length) todo.push({ tab: "drafts", text: `색인 안 된 글 ${idxProblems.length}편 (${idxProblems[0].title.slice(0, 18)}…) 확인`, level: "warn" });
       const tomorrow = new Date(Date.now() + 9 * 3600000 + 86400000).toISOString().slice(0, 10);
-      if (next?.kst && queue.length && !scheduledDays.includes(tomorrow)) todo.push({ tab: "drafts", text: `내일(${tomorrow.slice(5)}) 예약이 비어 있음 → 원고 1편 자동 입력`, level: "do" });
+      if (perDay && queue.length) {
+        const todayLeft = Math.max(0, perDay - (sched.occ[todayKst] || 0));
+        const tomorrowLeft = Math.max(0, perDay - (sched.occ[tomorrow] || 0));
+        const todayLater = times.filter((t) => t > new Date(Date.now() + 9 * 3600000 + 20 * 60000).toISOString().slice(11, 16)).length; // 오늘 아직 잡을 수 있는 시각 수
+        const todayNeed = Math.min(todayLeft, todayLater);
+        if (todayNeed) todo.push({ tab: "drafts", text: `오늘 발행 ${sched.occ[todayKst] || 0}/${perDay} → 원고 ${todayNeed}편 자동 입력 (다음 슬롯 ${next?.kst?.slice(5) || "-"})`, level: "do" });
+        else if (tomorrowLeft) todo.push({ tab: "drafts", text: `내일(${tomorrow.slice(5)}) 예약 ${sched.occ[tomorrow] || 0}/${perDay} → 원고 ${tomorrowLeft}편 자동 입력`, level: "do" });
+      }
+      if (publishing.immediate.length) todo.push({ tab: "drafts", text: `예약 대신 바로 발행한 글 ${publishing.immediate.length}편(${publishing.immediate[0].title.slice(0, 14)}…) → 예약 목록에서 뺐고 그날 발행 수에 넣었습니다`, level: "info" });
+      if (publishing.stale.length) todo.push({ tab: "drafts", text: `예약 시각이 지났는데 안 올라온 글 ${publishing.stale.length}편(${publishing.stale[0].title.slice(0, 14)}…) → 발행 버튼이 안 눌렸는지 확인`, level: "warn" });
       if (!queue.length) todo.push({ tab: "drafts", text: "큐가 비어 있음 → [새 원고 생성]", level: "do" });
       if (commentsToday < 10) todo.push({ tab: "comments", text: `이웃 글 댓글 ${commentsToday}/10 → 댓글 탭에서 ${10 - commentsToday}개 더`, level: "do" });
       if (seasonNow?.writeNow?.length) {
@@ -348,7 +430,7 @@ const server = http.createServer(async (req, res) => {
         const pick = seasonNow.writeNow.filter((t) => !written.has(t.replace(/\s+/g, "")) && ![...queue.map((q) => q.title)].some((ti) => ti.includes(t.split(" ")[0]))).slice(0, 3);
         if (pick.length) todo.push({ tab: "drafts", text: `지금 쓸 시즌 주제: ${pick.join(", ")} (다음 달 검색 피크)`, level: "idea" });
       }
-      return json(res, 200, { todayKst, queue: { count: queue.length, items: queue, nextSlot: next?.kst || null, scheduledDays, dupes }, incoming, commentsToday, buddyToday, buddyCap: (await loadConfig()).buddyDailyCap ?? DAILY_CAP, stats, rank, index: { problems: idxProblems, waiting: idxWaiting }, season: seasonNow, todo });
+      return json(res, 200, { todayKst, queue: { count: queue.length, items: queue, nextSlot: next?.kst || null, scheduledDays, dupes }, publishing, incoming, commentsToday, buddyToday, buddyCap: (await loadConfig()).buddyDailyCap ?? DAILY_CAP, stats, rank, index: { problems: idxProblems, waiting: idxWaiting }, season: seasonNow, todo });
     }
     // ── 받은 서로이웃 신청 수락 + 환영 댓글 ──
     if (req.method === "GET" && url.pathname === "/api/neighbors/incoming") {
