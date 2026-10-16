@@ -19,7 +19,12 @@ export async function buildPrompt(blog, { topic = "", extra = "", notes = "" } =
   if (needsNotes && !notes.trim()) throw new Error(`"${t.label}" 유형은 참고 메모(경험·수치·사진 설명)가 있어야 씁니다. 원고 탭의 참고 메모 칸에 적어 주세요.`);
   const style = await readFile(path.join(paths.prompts, "style-guide.md"), "utf8").catch(() => "");
   let searchadNote = "검색광고 API 키가 없어 검색량 게이트는 건너뛴다(자동완성·검색결과로 수요만 확인).";
-  try { await readFile(paths.searchad, "utf8"); searchadNote = `node ${path.join(paths.scripts, "keyword-check.mjs")} "키워드1" "키워드2" 로 월 검색량을 확인해 pass:true 키워드만 쓴다(100~3,000 롱테일 우선).`; } catch { /* 키 없음 */ }
+  {
+    let hasSearchad = false, hasOpenapi = false;
+    try { await readFile(paths.searchad, "utf8"); hasSearchad = true; } catch { /* 키 없음 */ }
+    try { await readFile(paths.openapi, "utf8"); hasOpenapi = true; } catch { /* 키 없음 */ }
+    if (hasSearchad || hasOpenapi) searchadNote = `node ${path.join(paths.scripts, "keyword-check.mjs")} "키워드1" "키워드2" 로 확인해 pass:true 키워드만 쓴다${hasSearchad ? "(월 검색량 100~3,000 롱테일 우선)" : ""}${hasOpenapi ? ". 상위 10개 글 중 14일 이내 글이 6개 이상이거나 제목에 키워드를 전부 담은 글이 9개 이상이면 탈락. ourApiRank가 있으면 이미 그 키워드로 검색되는 글이 있으니 다른 키워드를 고른다" : ""}.`;
+  }
   const vars = {
     BLOG_NAME: blog.blogName || blog.label,
     BLOG_ID: blog.blogId,
