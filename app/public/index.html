@@ -108,6 +108,33 @@
   .cand .brief { margin-top:4px; font-size:12.5px; color:var(--muted); line-height:1.5; }
   .cand.done { opacity:.55; }
   .cand .chk { float:right; transform:scale(1.2); margin:4px 2px 0 10px; }
+  /* 댓글 목록 — 카페 글 목록식 */
+  .ctool { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); background:#fafbfc; font-size:13px; flex-wrap:wrap; }
+  .ctool .left, .ctool .right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .ctool label { display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:700; }
+  .ctool select { border:1.5px solid var(--line); border-radius:8px; padding:5px 8px; font:inherit; font-size:13px; background:#fff; }
+  .ctool a.lnk { color:var(--primary); font-weight:700; cursor:pointer; text-decoration:underline; }
+  table.clist { width:100%; border-collapse:collapse; font-size:14px; }
+  table.clist th { text-align:left; font-size:12.5px; color:var(--muted); font-weight:700; padding:8px 10px; border-bottom:1px solid var(--line); background:#fff; }
+  table.clist td { padding:10px 10px; border-bottom:1px solid var(--soft); vertical-align:top; }
+  table.clist tr.sel td { background:#f1f8f4; }
+  table.clist tr.done td { opacity:.5; }
+  table.clist td.ck, table.clist th.ck { width:30px; text-align:center; padding-left:12px; }
+  table.clist td.ck input, table.clist th.ck input { transform:scale(1.25); cursor:pointer; }
+  table.clist td.no { width:34px; color:var(--muted); font-size:12.5px; }
+  table.clist td.tt .t { font-weight:800; cursor:pointer; }
+  table.clist td.tt .t:hover { text-decoration:underline; }
+  table.clist td.tt .brief { font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.45; }
+  table.clist td.wr { width:110px; color:var(--muted); font-size:13px; white-space:nowrap; }
+  table.clist td.tm { width:70px; color:var(--muted); font-size:12.5px; white-space:nowrap; }
+  table.clist td.st { width:150px; font-size:12.5px; }
+  table.clist tr.ed td { padding-top:0; background:#fcfcfd; }
+  table.clist tr.ed textarea { width:100%; box-sizing:border-box; min-height:60px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:13.5px; line-height:1.5; resize:vertical; }
+  table.clist tr.ed .btns { margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .cpage { display:flex; justify-content:center; align-items:center; gap:4px; padding:14px; border-top:1px solid var(--line); background:#fafbfc; }
+  .cpage button { background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:6px; min-width:32px; padding:5px 8px; font-size:13px; font-weight:700; }
+  .cpage button.cur { background:var(--deep); color:#fff; border-color:var(--deep); }
+  .cpage button:disabled { opacity:.4; }
 
   /* 오늘 */
   .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
@@ -271,7 +298,7 @@
       </header>
       <div class="mode">
         <div class="row">
-          <button class="small" id="batchBtn" onclick="postChecked()">체크한 글에 순서대로 등록 (30~60초 간격)</button>
+          <button class="small" id="batchBtn" onclick="postChecked()">선택한 글에 순서대로 등록 (30~60초 간격)</button>
           <button class="gray small" onclick="stopBatch()">중단</button>
           <span class="status" id="batchStatus"></span>
         </div>
@@ -703,46 +730,84 @@ async function pollAuto() {
 /* ── 댓글 ── */
 let _cmts = [];
 let batchStop = false;
+// ── 댓글 목록: 카페 글 목록처럼 페이지로 끊고, 페이지 단위 전체선택 ──
+let _cPage = 1, _cSize = 20, _cFilter = "all";
+try { _cSize = Number(localStorage.getItem("cSize")) || 20; } catch {}
+function cVisible() { return _cmts.map((c, i) => ({ c, i })).filter(({ c }) => !c.skipped && (_cFilter === "all" || (_cFilter === "topic" ? c.topicHits.length : _cFilter === "checked" ? c.checked : _cFilter === "ready" ? (c.text || "").trim().length >= 10 : true))); }
+function cPageItems() { const v = cVisible(); const pages = Math.max(1, Math.ceil(v.length / _cSize)); if (_cPage > pages) _cPage = pages; return { v, pages, items: v.slice((_cPage - 1) * _cSize, _cPage * _cSize) }; }
 function renderComments(data) {
-  document.getElementById("cCount").textContent = `오늘 댓글 ${data.todayCount}개 · 후보 ${data.candidates.length}개`;
-  _cmts = data.candidates;
+  if (data) { _cmts = data.candidates.map((c) => ({ ...c, checked: !!c.topicHits.length, text: "", status: "", done: false, skipped: false, open: false })); _cPage = 1; window._cToday = data.todayCount; }
+  document.getElementById("cCount").textContent = `오늘 댓글 ${window._cToday ?? 0}개 · 후보 ${_cmts.filter((c) => !c.skipped).length}개`;
   const box = document.getElementById("comments");
   if (!_cmts.length) { box.innerHTML = '<div class="empty">아직 댓글 달 새 글이 없습니다. 이웃이 늘면 여기 쌓입니다.</div>'; return; }
-  box.innerHTML = _cmts.map((c, i) => `
-    <div class="cand" id="cmt-${i}">
-      <input type="checkbox" class="chk" id="chk-${i}" ${c.topicHits.length ? "checked" : ""}>
-      <div class="t">${esc(c.title)}</div>
-      <div class="m">${esc(c.nickname)} · ${c.hoursAgo < 1 ? "방금" : c.hoursAgo + "시간 전"}${c.topicHits.length ? ` · <span class="pill ok">우리 주제 (${esc(c.topicHits.slice(0,3).join(", "))})</span>` : ""}</div>
-      <div class="brief">${esc(c.brief.slice(0, 160))}…</div>
-      <textarea id="txt-${i}" placeholder="[문안 제안]을 누르거나 직접 쓰세요"></textarea>
+  const { v, pages, items } = cPageItems();
+  const checkedAll = _cmts.filter((c) => c.checked && !c.skipped).length;
+  const pageAll = items.length > 0 && items.every(({ c }) => c.checked);
+  const ago = (h) => h < 1 ? "방금" : h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`;
+  const sizes = [10, 20, 50, 100];
+  const tool = `
+    <div class="ctool">
+      <div class="left">
+        <label><input type="checkbox" id="cAll" ${pageAll ? "checked" : ""} onchange="cToggleAll(this.checked)"> 이 페이지 전체선택</label>
+        <span class="mut">선택 <b id="cSelN">${checkedAll}</b>개 / 전체 ${v.length}개</span>
+        <a class="lnk" onclick="cSelectEvery(true)">전체 ${v.length}개 모두 선택</a>
+        <a class="lnk" onclick="cSelectEvery(false)">선택 해제</a>
+      </div>
+      <div class="right">
+        <select onchange="_cFilter=this.value;_cPage=1;renderComments()"><option value="all" ${_cFilter==="all"?"selected":""}>전체 글</option><option value="topic" ${_cFilter==="topic"?"selected":""}>우리 주제만</option><option value="checked" ${_cFilter==="checked"?"selected":""}>선택한 글만</option><option value="ready" ${_cFilter==="ready"?"selected":""}>문안 있는 글만</option></select>
+        <select onchange="_cSize=Number(this.value);_cPage=1;try{localStorage.setItem('cSize',_cSize)}catch{};renderComments()">${sizes.map((n) => `<option value="${n}" ${n===_cSize?"selected":""}>${n}개씩 보기</option>`).join("")}</select>
+      </div>
+    </div>`;
+  const rows = items.map(({ c, i }, k) => `
+    <tr class="${c.checked ? "sel" : ""} ${c.done ? "done" : ""}" id="cmt-${i}">
+      <td class="ck"><input type="checkbox" id="chk-${i}" ${c.checked ? "checked" : ""} onchange="cToggle(${i}, this.checked)"></td>
+      <td class="no">${(_cPage - 1) * _cSize + k + 1}</td>
+      <td class="tt"><div class="t" onclick="cOpen(${i})">${esc(c.title)}${c.topicHits.length ? ` <span class="pill ok">주제 ${esc(c.topicHits.slice(0, 2).join(", "))}</span>` : ""}${(c.text || "").trim().length >= 10 ? ' <span class="pill">문안 있음</span>' : ""}</div><div class="brief">${esc((c.brief || "").slice(0, 110))}…</div></td>
+      <td class="wr">${esc(c.nickname)}</td>
+      <td class="tm">${ago(c.hoursAgo)}</td>
+      <td class="st"><span class="status" id="cst-${i}" style="color:${c.statusColor || ""}">${esc(c.status || "")}</span></td>
+    </tr>
+    <tr class="ed" id="ed-${i}" style="${c.open || (c.text || "").trim() ? "" : "display:none"}"><td></td><td></td><td colspan="4">
+      <textarea id="txt-${i}" placeholder="[문안 제안]을 누르거나 직접 쓰세요" oninput="_cmts[${i}].text=this.value">${esc(c.text || "")}</textarea>
       <div class="btns">
         <button class="ghost small" onclick="suggestOne(${i})">문안 제안</button>
         <button class="small" onclick="postOne(${i})">댓글 등록</button>
         <button class="gray small" onclick="window.open('${esc(c.url)}','_blank')">글 열기</button>
         <button class="gray small" onclick="skipComment(${i})">건너뛰기</button>
-        <span class="status" id="cst-${i}"></span>
+        <button class="gray small" onclick="_cmts[${i}].open=false;renderComments()">접기</button>
       </div>
-    </div>`).join("");
+    </td></tr>`).join("");
+  const pageBtns = [];
+  const start = Math.max(1, Math.min(_cPage - 4, pages - 9)), end = Math.min(pages, start + 9);
+  pageBtns.push(`<button ${_cPage === 1 ? "disabled" : ""} onclick="_cPage=1;renderComments()">«</button><button ${_cPage === 1 ? "disabled" : ""} onclick="_cPage--;renderComments()">‹</button>`);
+  for (let n = start; n <= end; n += 1) pageBtns.push(`<button class="${n === _cPage ? "cur" : ""}" onclick="_cPage=${n};renderComments()">${n}</button>`);
+  pageBtns.push(`<button ${_cPage === pages ? "disabled" : ""} onclick="_cPage++;renderComments()">›</button><button ${_cPage === pages ? "disabled" : ""} onclick="_cPage=${pages};renderComments()">»</button>`);
+  box.innerHTML = tool + `<table class="clist"><thead><tr><th class="ck"><input type="checkbox" ${pageAll ? "checked" : ""} onchange="cToggleAll(this.checked)"></th><th></th><th>제목</th><th>글쓴이</th><th>시간</th><th>상태</th></tr></thead><tbody>${rows || `<tr><td colspan="6" class="empty">이 조건에 맞는 글이 없습니다</td></tr>`}</tbody></table>` + (pages > 1 || v.length > 10 ? `<div class="cpage">${pageBtns.join("")}<span class="mut" style="margin-left:10px;font-size:12.5px">${_cPage}/${pages} 페이지</span></div>` : "");
 }
+function cToggle(i, on) { _cmts[i].checked = on; const tr = document.getElementById(`cmt-${i}`); if (tr) tr.classList.toggle("sel", on); const n = document.getElementById("cSelN"); if (n) n.textContent = _cmts.filter((c) => c.checked && !c.skipped).length; const all = document.getElementById("cAll"); if (all) all.checked = cPageItems().items.every(({ c }) => c.checked); }
+function cToggleAll(on) { for (const { c } of cPageItems().items) c.checked = on; renderComments(); }
+function cSelectEvery(on) { for (const { c } of cVisible()) c.checked = on; renderComments(); }
+function cOpen(i) { _cmts[i].open = !_cmts[i].open; renderComments(); const el = document.getElementById(`txt-${i}`); if (el && _cmts[i].open) el.focus(); }
 async function loadComments() {
   document.getElementById("comments").innerHTML = '<div class="empty">이웃 피드를 읽는 중… (5~10초)</div>';
   const d = await api("/api/comments/feed");
   if (d.message && !d.candidates) { document.getElementById("comments").innerHTML = `<div class="empty">⚠️ ${esc(d.message)}</div>`; return; }
   renderComments(d);
 }
-function cst(i, text, color) { const el = document.getElementById(`cst-${i}`); if (el) { el.textContent = text; el.style.color = color || ""; } }
+function cst(i, text, color) { const c = _cmts[i]; if (c) { c.status = text; c.statusColor = color || ""; } const el = document.getElementById(`cst-${i}`); if (el) { el.textContent = text; el.style.color = color || ""; } }
+function cText(i) { const el = document.getElementById(`txt-${i}`); return (el ? el.value : _cmts[i].text || "").trim(); }
 async function suggestOne(i) {
   const c = _cmts[i]; cst(i, "문안 만드는 중… (20~30초)");
   const r = await api("/api/comments/suggest", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ title: c.title, brief: c.brief }) });
-  if (r.text) { document.getElementById(`txt-${i}`).value = r.text; cst(i, "제안 완료 — 고쳐도 됩니다", "#15803d"); return true; }
+  if (r.text) { c.text = r.text; c.open = true; const el = document.getElementById(`txt-${i}`); if (el) { el.value = r.text; document.getElementById(`ed-${i}`).style.display = ""; } cst(i, "제안 완료 — 고쳐도 됩니다", "#15803d"); return true; }
   cst(i, "제안 실패: " + (r.error || ""), "#b91c1c"); return false;
 }
 let suggestStop = false;
 async function suggestAll() {
   const btn = document.getElementById("suggestAllBtn");
   if (btn.dataset.running === "1") { suggestStop = true; btn.textContent = "중단 중…"; return; }
-  const idx = _cmts.map((_, i) => i).filter(i => document.getElementById(`chk-${i}`)?.checked && !document.getElementById(`txt-${i}`).value.trim());
-  if (!idx.length) { alert("문안을 만들 글이 없습니다. 체크된 글이 없거나 이미 문안이 채워져 있습니다."); return; }
+  const idx = _cmts.map((c, i) => i).filter((i) => _cmts[i].checked && !_cmts[i].skipped && !_cmts[i].done && cText(i).length < 10);
+  if (!idx.length) { alert("문안을 만들 글이 없습니다. 선택된 글이 없거나 이미 문안이 채워져 있습니다."); return; }
   suggestStop = false; btn.dataset.running = "1"; btn.textContent = "중단";
   const box = document.getElementById("suggestProgress"); box.style.display = "block";
   const t0 = Date.now(); let done = 0, fail = 0;
@@ -751,34 +816,35 @@ async function suggestAll() {
     document.getElementById("spCount").textContent = `${done + fail + 1} / ${idx.length}`;
     document.getElementById("spNow").textContent = `지금 쓰는 글: ${_cmts[i].title.slice(0, 50)} (한 편에 20~30초)`;
     document.getElementById("spBar").style.width = `${Math.round((done + fail) / idx.length * 100)}%`;
-    document.getElementById(`cmt-${i}`).scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById(`cmt-${i}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     const ok = await suggestOne(i); if (ok) done++; else fail++;
   }
   document.getElementById("spBar").style.width = "100%";
   document.getElementById("spCount").textContent = `${done + fail} / ${idx.length}`;
   document.getElementById("spText").textContent = suggestStop ? `중단됨 — ${done}개 완료` : `완료 — ${done}개 문안 채움${fail ? `, ${fail}개 실패` : ""} (${fmtElapsed(Date.now() - t0)})`;
-  document.getElementById("spNow").textContent = "문안을 읽어보고 고친 뒤 [댓글 등록] 또는 [체크한 글에 순서대로 등록]을 누르세요.";
+  document.getElementById("spNow").textContent = "문안을 읽어보고 고친 뒤 [댓글 등록] 또는 [체크한 글에 순서대로 등록]을 누르세요. 다른 페이지의 글도 선택돼 있으면 함께 처리됩니다.";
   btn.dataset.running = "0"; btn.textContent = "모두 문안 제안";
+  renderComments();
 }
 async function postOne(i) {
-  const c = _cmts[i]; const text = document.getElementById(`txt-${i}`).value.trim();
+  const c = _cmts[i]; const text = cText(i);
   if (text.length < 10) { cst(i, "댓글 내용을 먼저 채워주세요", "#b91c1c"); return false; }
-  cst(i, "등록 중… (10~20초)");
+  c.text = text; cst(i, "등록 중… (10~20초)");
   const r = await api("/api/comments/post", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ blogId: c.blogId, logNo: c.logNo, text, title: c.title, nickname: c.nickname }) });
   cst(i, r.message, r.ok ? "#15803d" : "#b91c1c");
-  if (r.ok) { document.getElementById(`cmt-${i}`).classList.add("done"); document.getElementById(`chk-${i}`).checked = false; }
+  if (r.ok) { c.done = true; c.checked = false; c.open = false; const tr = document.getElementById(`cmt-${i}`); if (tr) { tr.classList.add("done"); tr.classList.remove("sel"); const ck = document.getElementById(`chk-${i}`); if (ck) ck.checked = false; } const n = document.getElementById("cSelN"); if (n) n.textContent = _cmts.filter((x) => x.checked && !x.skipped).length; }
   if (r.fatal) { alert("⚠️ " + r.message); batchStop = true; }
   return r.ok;
 }
 async function skipComment(i) {
   const c = _cmts[i];
   await api("/api/comments/skip", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ blogId: c.blogId, logNo: c.logNo }) });
-  document.getElementById(`cmt-${i}`).remove();
+  c.skipped = true; c.checked = false; renderComments();
 }
 function stopBatch() { batchStop = true; document.getElementById("batchStatus").textContent = "중단 요청됨"; }
 async function postChecked() {
-  const idx = _cmts.map((_, i) => i).filter(i => document.getElementById(`chk-${i}`)?.checked && document.getElementById(`txt-${i}`).value.trim().length >= 10);
-  if (!idx.length) { alert("체크돼 있고 문안이 채워진 글이 없습니다. 먼저 [모두 문안 제안]을 누르세요."); return; }
+  const idx = _cmts.map((c, i) => i).filter((i) => _cmts[i].checked && !_cmts[i].skipped && !_cmts[i].done && cText(i).length >= 10);
+  if (!idx.length) { alert("선택돼 있고 문안이 채워진 글이 없습니다. 먼저 [모두 문안 제안]을 누르세요."); return; }
   if (!confirm(`${idx.length}개 글에 순서대로 댓글을 답니다. 30~60초 간격이라 약 ${Math.ceil(idx.length * 0.75)}분 걸립니다. 시작할까요?`)) return;
   batchStop = false;
   const st = document.getElementById("batchStatus"); document.getElementById("batchBtn").disabled = true;
@@ -786,6 +852,7 @@ async function postChecked() {
   for (const i of idx) {
     if (batchStop) break;
     st.textContent = `${done + 1}/${idx.length} 등록 중…`;
+    document.getElementById(`cmt-${i}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     const ok = await postOne(i); if (ok) done++;
     if (batchStop) break;
     const wait = 30000 + Math.random() * 30000;
