@@ -176,9 +176,10 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, key });
     }
     if (req.method === "POST" && url.pathname === "/api/keys") {
-      // 선택 항목: 네이버 검색광고 API 키(검색량 게이트), 클로드 장기 토큰
+      // 선택 항목: 네이버 검색광고 API 키(검색량), NAVER API HUB 검색 API 키(경쟁 구성), 클로드 장기 토큰
       const body = await readBody(req);
       if (body.searchad && body.searchad.customerId) await writeFile(paths.searchad, JSON.stringify(body.searchad, null, 2), { mode: 0o600 });
+      if (body.openapi && body.openapi.keyId && body.openapi.key) await writeFile(paths.openapi, JSON.stringify({ keyId: String(body.openapi.keyId).trim(), key: String(body.openapi.key).trim() }, null, 2), { mode: 0o600 });
       if (body.oauthToken !== undefined) { if (String(body.oauthToken).trim()) await writeFile(paths.oauthToken, String(body.oauthToken).trim(), { mode: 0o600 }); }
       return json(res, 200, { ok: true });
     }

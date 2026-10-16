@@ -329,6 +329,10 @@
         <div class="v"><input type="text" id="k_customer" placeholder="CUSTOMER_ID" style="width:120px" /> <input type="text" id="k_access" placeholder="액세스라이선스" style="width:220px" /> <input type="password" id="k_secret" placeholder="비밀키" style="width:200px" /><button class="ghost small" onclick="saveKeys()">저장</button></div>
       </div>
       <div class="setting">
+        <div class="k">네이버 검색 API (NAVER API HUB)<small>ncloud.com 콘솔 → Services → Application Services → NAVER API HUB → Application 등록(검색 체크) → 인증 정보. 상위 10개 글의 신선도·제목 포화로 경쟁을 거릅니다. ※ 개발자센터(developers.naver.com)의 검색 API 신규 발급은 2026-07-31 종료</small></div>
+        <div class="v"><input type="text" id="k_hubid" placeholder="Client ID" style="width:160px" /> <input type="password" id="k_hubkey" placeholder="Client Secret" style="width:300px" /><button class="ghost small" onclick="saveKeys()">저장</button></div>
+      </div>
+      <div class="setting">
         <div class="k">클로드 장기 토큰<small>터미널에서 <code>claude setup-token</code> 실행 결과. 로그인 만료 없이 자동 생성이 돕니다</small></div>
         <div class="v"><input type="password" id="k_oauth" placeholder="sk-ant-oat01-…" style="width:360px" /><button class="ghost small" onclick="saveKeys()">저장</button></div>
       </div>
@@ -577,6 +581,7 @@ async function saveKeys() {
   const v = (id) => document.getElementById(id).value.trim();
   const body = {};
   if (v("k_customer") && v("k_access") && v("k_secret")) body.searchad = { customerId: v("k_customer"), accessLicense: v("k_access"), secretKey: v("k_secret") };
+  if (v("k_hubid") && v("k_hubkey")) body.openapi = { keyId: v("k_hubid"), key: v("k_hubkey") };
   if (v("k_oauth")) body.oauthToken = v("k_oauth");
   if (!Object.keys(body).length) { alert("저장할 키가 없습니다"); return; }
   const r = await api("/api/keys", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });

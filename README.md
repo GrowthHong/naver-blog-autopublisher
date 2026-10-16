@@ -53,7 +53,7 @@ npm run schedule
 - `blogs/<key>/drafts/` — 원고 큐, `images/`, `published/`(발행 완료 보관)
 - `chrome-profiles/<key>/` — 네이버 로그인 세션 (삭제하면 다시 로그인)
 - `state/` — 댓글·수락·통계·순위·색인 기록, `reports/` — 보고서(md), `logs/`
-- `searchad.json`, `oauth-token` — 선택 키 (권한 600)
+- `searchad.json`(검색광고 검색량), `naver-openapi.json`(NAVER API HUB 검색 API: 상위10 경쟁 구성), `oauth-token` — 선택 키 (권한 600)
 
 ## 꼭 알아둘 것
 - **발행은 사람이 누릅니다.** 네이버는 자동 발행·자동 댓글·자동 이웃을 어뷰징으로 봅니다. 이 도구는 발행 버튼을 대신 누르지 않고, 이웃·댓글 자동화는 하루 상한과 무작위 간격, 보안문자 감지 시 즉시 중단이 들어 있습니다. 그래도 **본인 계정에 대한 책임은 본인에게** 있습니다. 하루 서로이웃 10~20건, 댓글 10개 안팎을 권합니다.
