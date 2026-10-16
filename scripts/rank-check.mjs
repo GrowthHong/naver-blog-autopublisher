@@ -118,11 +118,14 @@ async function measure(page, keyword) {
       else if (nGov >= 2) label = "공공·웹문서";
       else label = "기타 블록";
       const ours = real.some(isOurs);
-      blocks.push({ order, label, ours, nBlog: isAi ? 0 : nBlog, nCafe, nIn, nKin }); // AI 브리핑 안의 블로그 인용은 블로그 블록으로 세지 않는다
+      blocks.push({ order, label, ours, nBlog: isAi ? 0 : nBlog, nCafe, nIn, nKin }); // AI 브리핑 래퍼 안의 블로그 관련글은 블로그 블록으로 세지 않는다
       if (isAi && !ai.present) {
+        // 인용 출처는 ai-briefing 루트 안의 링크만 센다. 같은 래퍼 안에 블로그 관련글 묶음이 같이 들어 있어서 래퍼 전체로 세면 블로그가 수십 건으로 부풀려진다(2026-10-17 확인)
+        const aiRoot = b.querySelector('[data-block-id^="ai-briefing"]') || b;
+        const aiLinks = [...aiRoot.querySelectorAll("a[href]")].map((x) => x.href).filter((h) => !/search\.naver\.com|help\.naver\.com|keep\.naver\.com|^javascript:/.test(h));
         const seen = new Set(); const cited = [];
-        for (const h of real) { const k = h.replace(/[?#].*$/, ""); if (seen.has(k)) continue; seen.add(k); cited.push(k); }
-        ai = { present: true, order, cited: cited.slice(0, 20), ourCited: real.some(isOurs) };
+        for (const h of aiLinks) { const k = h.replace(/[?#].*$/, ""); if (seen.has(k)) continue; seen.add(k); cited.push(k); }
+        ai = { present: true, order, cited: cited.slice(0, 30), ourCited: aiLinks.some(isOurs) };
       }
     }
     const site = [...root.querySelectorAll("a[href]")].some((a) => a.href.includes(siteHost));
