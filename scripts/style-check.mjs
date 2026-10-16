@@ -25,6 +25,8 @@ if (HYETAEK_MINIMAL) {
   const canN = (text.match(/할 수 있습니다/g) || []).length;
   const numN = (text.match(/\d[\d,.]*\s?(원|%|세|만)/g) || []).length;
   const midBreak = bodyParas.filter((p) => /[가-힣](면|고|서|며|는|은|을|를|에|의|도|과|와)$/.test(p) && !/[.!?]$/.test(p)).length;
+  const TITLE_AWKWARD = /두 번 갑니다|세어지지|둘 중 하나입니다|에서 끝나지 않습니다|다 세어|헤아려지지/;
+  if (TITLE_AWKWARD.test(title)) fails.push("제목이 직역체(예: '두 번 갑니다') — 사람들이 쓰는 말로('헛걸음입니다' 등)");
   if (dashN > 1) fails.push(`줄표(—) ${dashN}개 — 1개 이하`);
   if (parenN > 10) fails.push(`괄호 ${parenN}개 — 10개 이하`);
   if (bannedH.length) fails.push(`AI 티 표현: ${bannedH.join(", ")}`);
