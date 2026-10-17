@@ -108,6 +108,19 @@
   .cand .brief { margin-top:4px; font-size:12.5px; color:var(--muted); line-height:1.5; }
   .cand.done { opacity:.55; }
   .cand .chk { float:right; transform:scale(1.2); margin:4px 2px 0 10px; }
+  /* 발행 점검 상태창 */
+  .pc { margin:0 14px 12px; border:1px solid var(--line); border-radius:10px; background:#fff; overflow:hidden; }
+  .pc .pchead { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 14px; background:#fafbfc; border-bottom:1px solid var(--line); font-size:13px; flex-wrap:wrap; }
+  .pc .pchead b { font-size:14px; }
+  .pc table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  .pc td { padding:8px 12px; border-bottom:1px solid var(--soft); vertical-align:middle; }
+  .pc td.s { width:86px; white-space:nowrap; }
+  .pc td.a { width:120px; text-align:right; white-space:nowrap; }
+  .pc .pill.pub { background:var(--okbg); color:var(--ok); }
+  .pc .pill.res { background:var(--warnbg); color:var(--warn); }
+  .pc .pill.pen { background:var(--soft); color:var(--muted); }
+  .pc .sub { font-size:12px; color:var(--muted); margin-top:2px; }
+  .pc .foot { padding:8px 14px; font-size:12.5px; color:var(--muted); background:#fafbfc; border-top:1px solid var(--line); }
   /* 댓글 목록 — 카페 글 목록식 */
   .ctool { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); background:#fafbfc; font-size:13px; flex-wrap:wrap; }
   .ctool .left, .ctool .right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -221,6 +234,7 @@
         <header>
           <div class="h"><h2><span class="n">1</span>원고 고르기</h2>
             <span style="display:flex;gap:6px;align-items:center"><span class="status" id="refreshStatus"></span>
+              <button class="ghost small" id="pubCheckBtn" onclick="publishCheck()">발행 점검</button>
               <button class="gray small" id="refreshBtn" onclick="refresh(true)">새로고침</button></span></div>
           <p class="help">클로드가 쓴 원고가 여기 쌓입니다. 자동 작업을 등록했다면 매일 06:00에 설정한 편수만큼 추가되고, 지금 바로 필요하면 아래에서 만들 수 있습니다.</p>
         </header>
@@ -230,6 +244,7 @@
           <textarea id="genNotes" rows="3" placeholder="참고 메모 (선택 — 리뷰·일상 유형은 필수): 내가 겪은 일, 실제 수치, 사진에 뭐가 찍혔는지, 좋았던 점·아쉬운 점. 여기 적은 것만 재료로 씁니다." style="width:100%;margin-top:6px;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit"></textarea>
         </div>
         <div class="banner" id="genStatus"></div>
+        <div id="pubCheck" style="display:none"></div>
         <div id="list"><div class="empty">불러오는 중…</div></div>
       </div>
 
@@ -549,6 +564,45 @@ async function loadPostTypes(selected) {
   postTypeHint();
 }
 function postTypeHint() { const k = document.getElementById("s_postType").value; document.getElementById("s_postTypeHint").textContent = _postTypes?.[k]?.hint || ""; }
+
+/* ── 발행 점검: 큐 원고 ↔ 블로그 글 목록 대조 ── */
+let _pc = null;
+async function publishCheck() {
+  const box = document.getElementById("pubCheck"); const btn = document.getElementById("pubCheckBtn");
+  box.style.display = "block"; box.innerHTML = '<div class="pc"><div class="pchead"><b>발행 점검</b><span class="mut">블로그 글 목록과 대조하는 중… (3~5초)</span></div></div>'; btn.disabled = true;
+  try { _pc = await api("/api/publish-check"); } catch (e) { box.innerHTML = `<div class="pc"><div class="pchead"><b>발행 점검</b><span class="bad">실패: ${esc(String(e))}</span></div></div>`; btn.disabled = false; return; }
+  btn.disabled = false; renderPubCheck();
+}
+function renderPubCheck() {
+  const d = _pc; const box = document.getElementById("pubCheck"); if (!d) return;
+  const pub = d.rows.filter((r) => r.state === "published");
+  const pill = (r) => r.state === "published" ? `<span class="pill pub">올라감</span>` : r.state === "reserved" ? `<span class="pill res">예약됨</span>` : `<span class="pill pen">미발행</span>`;
+  const sub = (r) => r.state === "published" ? `${r.publishedAt} 발행${r.match === "prefix" ? ` · 블로그 제목: ${esc(r.blogTitle.slice(0, 30))}` : ""} · <a href="${esc(r.url)}" target="_blank">글 보기</a>` : r.state === "reserved" ? `${r.reservedAt} 예약 · 그 시각에 올라오면 다음 점검에서 "올라감"으로 바뀝니다` : `아직 발행 안 됨 · 다음 빈 슬롯 ${d.nextSlot || "-"}`;
+  const rows = d.rows.map((r) => `<tr><td class="s">${pill(r)}</td><td><div style="font-weight:700">${esc(r.title)}</div><div class="sub">${esc(r.file)} · ${sub(r)}</div></td><td class="a">${r.state === "published" ? `<button class="small" onclick="archiveOne('${esc(r.file)}','${r.publishedDate}')">발행 완료 처리</button>` : ""}</td></tr>`).join("");
+  const notes = d.notes.map((n) => n.kind === "immediate" ? `${esc(n.title.slice(0, 20))}… 예약(${n.at.slice(5)}) 대신 ${n.publishedAt.slice(5)}에 바로 발행 → 예약에서 뺌` : `${esc((n.title || n.file).slice(0, 20))}… 예약(${n.at.slice(5)}) 지났는데 안 올라옴 → 예약에서 뺌`).join("<br>");
+  box.innerHTML = `<div class="pc">
+    <div class="pchead"><span><b>발행 점검</b> <span class="mut">${d.checkedAt} · 블로그 최근 ${d.blogChecked}편과 대조</span></span>
+      <span>올라감 <b class="${pub.length ? "bad" : ""}">${d.summary.published}</b> · 예약됨 <b>${d.summary.reserved}</b> · 미발행 <b>${d.summary.pending}</b> · 오늘 발행 ${d.todayCount}/${d.perDay}</span>
+      <span style="display:flex;gap:6px">${pub.length ? `<button class="small" onclick="archiveAllPublished()">올라간 ${pub.length}편 모두 발행 완료 처리</button>` : ""}<button class="gray small" onclick="publishCheck()">다시 점검</button><button class="gray small" onclick="document.getElementById('pubCheck').style.display='none'">닫기</button></span></div>
+    <table><tbody>${rows || '<tr><td class="empty">큐가 비어 있습니다</td></tr>'}</tbody></table>
+    ${notes ? `<div class="foot">${notes}</div>` : ""}
+    <div class="foot">올라감 = 블로그에 같은 제목의 글이 있음(보관하면 큐에서 빠지고 순위 측정 대상이 됩니다). 예약됨 = 발행기가 예약 시각을 채워 둔 글. 블로그 최근 글: ${d.latest.map((x) => `${x.at.slice(5)} ${esc(x.title.slice(0, 14))}`).join(" / ")}</div>
+  </div>`;
+}
+async function archiveOne(file, date) {
+  const r = await api("/api/archive", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ file, date }) });
+  if (!r.ok && r.message) { alert(r.message); return false; }
+  if (current === file) { current = null; document.getElementById("detail").innerHTML = '<div class="empty">✅ 보관했습니다.</div>'; }
+  if (_pc) { _pc.rows = _pc.rows.filter((x) => x.file !== file); _pc.summary.published = _pc.rows.filter((x) => x.state === "published").length; renderPubCheck(); }
+  refresh(false); loadToday();
+  return true;
+}
+async function archiveAllPublished() {
+  const pub = (_pc?.rows || []).filter((r) => r.state === "published");
+  if (!pub.length) return;
+  if (!confirm(`블로그에 올라간 ${pub.length}편을 보관함으로 옮깁니다. 진행할까요?`)) return;
+  for (const r of pub) await archiveOne(r.file, r.publishedDate);
+}
 
 /* ── 새 원고 생성 ── */
 let genTimer = null;

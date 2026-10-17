@@ -297,12 +297,38 @@ const server = http.createServer(async (req, res) => {
       if (result.ok && slotNote) await recordSchedule(path.basename(file), slotNote.at, title);
       return json(res, 200, { ...result, schedule: slotNote });
     }
+    // ── 발행 점검: 큐 원고를 블로그 글 목록(최근 60편)과 대조 → 올라간 글 / 예약된 글 / 미발행 ──
+    if (req.method === "GET" && url.pathname === "/api/publish-check") {
+      const blog = await activeBlog();
+      const kstOf = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 16).replace("T", " ");
+      const files = existsSync(blog.draftsDir) ? (await readdir(blog.draftsDir)).filter((f) => /^post-.*\.md$/.test(f)).sort() : [];
+      let posts = [];
+      for (const page of [1, 2]) {
+        try { const r = await fetch(`https://m.blog.naver.com/api/blogs/${blog.blogId}/post-list?categoryNo=0&itemCount=30&page=${page}`, { headers: { "User-Agent": "Mozilla/5.0", Referer: `https://m.blog.naver.com/${blog.blogId}` } }); posts.push(...(((await r.json())?.result?.items) || []).map((x) => ({ logNo: String(x.logNo), title: String(x.titleWithInspectMessage || ""), addDate: Number(x.addDate) || 0 }))); } catch { /* 네트워크 */ }
+      }
+      const byTitle = new Map(posts.map((x) => [normTitle(x.title), x]));
+      const sched = await reconcileSchedule(blog);
+      const reservedByFile = Object.fromEntries(sched.reserved.map((x) => [x.file, x]));
+      const rows = [];
+      for (const f of files) {
+        const title = (await readFile(path.join(blog.draftsDir, f), "utf8")).split("\n")[0].replace(/^제목:\s*/, "").trim();
+        const exact = byTitle.get(normTitle(title));
+        const prefix = exact ? null : posts.find((x) => normTitle(x.title).slice(0, 12) === normTitle(title).slice(0, 12));
+        const hit = exact || prefix;
+        if (hit) rows.push({ file: f, title, state: "published", match: exact ? "exact" : "prefix", blogTitle: hit.title, publishedAt: kstOf(hit.addDate), publishedDate: kstOf(hit.addDate).slice(0, 10), url: `https://blog.naver.com/${blog.blogId}/${hit.logNo}` });
+        else if (reservedByFile[f]) rows.push({ file: f, title, state: "reserved", reservedAt: kstOf(new Date(reservedByFile[f].at).getTime()) });
+        else rows.push({ file: f, title, state: "pending" });
+      }
+      const u = await loadUserCfg(); const times = parseTimes(u);
+      const next = times.length ? await nextPublishSlot(times, blog) : null;
+      return json(res, 200, { checkedAt: kstOf(Date.now()), blogChecked: posts.length, rows, summary: { published: rows.filter((r) => r.state === "published").length, reserved: rows.filter((r) => r.state === "reserved").length, pending: rows.filter((r) => r.state === "pending").length }, notes: sched.notes.map((n) => ({ ...n, at: kstOf(new Date(n.at).getTime()), publishedAt: n.publishedAt ? kstOf(n.publishedAt) : null })), nextSlot: next?.kst || null, perDay: times.length, todayCount: sched.occ[new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)] || 0, latest: posts.slice(0, 5).map((x) => ({ title: x.title, at: kstOf(x.addDate) })) });
+    }
     if (req.method === "POST" && url.pathname === "/api/archive") {
-      const { file } = await readBody(req);
+      const { file, date: dateArg } = await readBody(req);
       const blog = await activeBlog();
       const publishedDir = publishedDirOf(blog);
       if (!existsSync(publishedDir)) await mkdir(publishedDir, { recursive: true });
-      const date = new Date().toISOString().slice(0, 10);
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(dateArg || "")) ? String(dateArg) : new Date().toISOString().slice(0, 10);
       const safe = path.basename(file);
       await rename(path.join(blog.draftsDir, safe), path.join(publishedDir, `${date}-${safe}`));
       return json(res, 200, { ok: true });
