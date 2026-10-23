@@ -40,6 +40,24 @@ export async function getBrowser(profile = "chrome-profile") {
 
 // 서로이웃 신청 폼을 직접 연다 (데스크톱 이웃추가는 팝업이라 자동화 크롬에서 차단될 수 있음)
 // 서로이웃 라디오 선택 + 메시지 입력까지 자동. autoSubmit=true면 [확인]까지 누르고 창을 닫는다.
+// 로그인 상태 확인 — 이웃 피드는 로그아웃 상태면 nid.naver.com 로그인 페이지로 튕긴다.
+// 세션이 만료돼도 신청 폼 페이지 자체는 열리는 경우가 있어서(2026-10 확인), 폼이 비어 있거나 제출이 "잘못된 요청"으로 끝나면
+// 계정 제한으로 단정하기 전에 반드시 이걸로 로그인부터 확인한다.
+async function loggedIn(browser) {
+  const probe = await browser.newPage();
+  try {
+    await probe.goto("https://m.blog.naver.com/FeedList.naver", { waitUntil: "domcontentloaded", timeout: 20000 });
+    await probe.waitForTimeout(600);
+    const url = probe.url();
+    const text = (await probe.locator("body").innerText().catch(() => "")) ?? "";
+    if (url.includes("nid.naver.com")) return false;
+    if (/로그인이 필요|로그인 후 이용|로그인해 주세요/.test(text.slice(0, 400))) return false;
+    return true;
+  } catch { return true; } // 확인 자체가 실패하면 기존 판정으로
+  finally { await probe.close().catch(() => {}); }
+}
+const LOGIN_MSG = "네이버 로그인 세션이 만료됐습니다(계정 제한 아님). 설정 탭 [네이버 로그인 창 열기]에서 다시 로그인한 뒤 이어서 하세요.";
+
 // 보안문자·이용 제한이 감지되면 fatal로 보고하고 그 즉시 멈춘다 — 우회는 하지 않는다.
 async function buddyForm(blogId, message, { autoSubmit = false, profile } = {}) {
   const browser = await getBrowser(profile);
@@ -62,10 +80,15 @@ async function buddyForm(blogId, message, { autoSubmit = false, profile } = {}) 
     await page.waitForTimeout(500);
 
     if (page.url().includes("nid.naver.com")) {
-      return finish({ ok: false, fatal: true, message: "네이버 로그인이 필요합니다. [네이버 로그인 창]에서 로그인 후 다시 시도하세요." });
+      return finish({ ok: false, fatal: true, login: true, message: LOGIN_MSG });
     }
 
     const bodyText = (await page.locator("body").innerText().catch(() => "")) ?? "";
+    // 폼이 안 보이면(라디오·입력창 없음) 제한보다 세션 만료가 먼저 — 로그인 상태를 확인하고 아니면 로그인 안내
+    const formCount = await page.locator("textarea, input[type=radio]").count().catch(() => 0);
+    if (formCount === 0 || /로그인이 필요|로그인 후 이용|로그인해 주세요/.test(bodyText)) {
+      if (!(await loggedIn(browser))) return finish({ ok: false, fatal: true, login: true, message: LOGIN_MSG });
+    }
     if (/보안문자|자동입력 방지|일시적으로 제한|이용이 제한/.test(bodyText)) {
       return finish({ ok: false, fatal: true, message: "네이버가 자동화 의심 제한을 걸었습니다. 오늘은 여기서 중단합니다 — 계속하면 계정이 위험합니다." });
     }
@@ -121,13 +144,15 @@ async function buddyForm(blogId, message, { autoSubmit = false, profile } = {}) 
     await page.locator('button:has-text("확인"), a:has-text("확인"), button[type="submit"]').first().click({ timeout: 4000 });
     await page.waitForTimeout(2000);
     const after = (await page.locator("body").innerText().catch(() => "")) ?? "";
-    if (/보안문자|자동입력 방지|제한|초과/.test(after)) {
+    if (page.url().includes("nid.naver.com")) return finish({ ok: false, fatal: true, login: true, message: LOGIN_MSG });
+    if (/보안문자|자동입력 방지|일시적으로 제한|이용이 제한|횟수.*초과|초과했습니다/.test(after)) {
       return finish({ ok: false, fatal: true, message: "신청 단계에서 제한이 감지되어 중단합니다." });
     }
     if (/페이지를 불러오는 중에 오류|잘못된 요청/.test(after)) {
-      // 2026-10-09 확인: 같은 세션·같은 폼에서 일반 이웃추가는 되고 서로이웃 신청만 invalid_parameter → 계정 단위 서로이웃 신청 제한.
-      // 후보를 계속 소진하면 제한이 길어질 수 있어 즉시 멈춘다.
-      return finish({ ok: false, fatal: true, message: "네이버가 이 계정의 서로이웃 신청을 거부하고 있습니다(일반 이웃추가는 됨 → 서로이웃 신청 제한 상태). 며칠 쉬었다가 다시 시도하세요. 그동안은 [댓글] 탭을 쓰세요." });
+      // 같은 오류 문구가 두 경우에 나온다: ① 세션 만료(폼은 열리지만 제출이 거부됨) ② 계정 단위 서로이웃 신청 제한(2026-10-09 확인: 일반 이웃추가는 되고 서로이웃만 거부).
+      // ①을 ②로 오판하면 사용자가 며칠을 쉬게 되므로, 먼저 로그인 상태를 확인한다.
+      if (!(await loggedIn(browser))) return finish({ ok: false, fatal: true, login: true, message: LOGIN_MSG });
+      return finish({ ok: false, fatal: true, message: "네이버가 이 계정의 서로이웃 신청을 거부하고 있습니다(로그인은 정상, 일반 이웃추가는 됨 → 서로이웃 신청 제한 상태). 며칠 쉬었다가 다시 시도하세요. 그동안은 [댓글] 탭을 쓰세요." });
     }
     const formGone = (await page.locator("textarea").count().catch(() => 0)) === 0;
     if (/신청.*완료|신청되었|신청을 보냈/.test(after) || formGone) {

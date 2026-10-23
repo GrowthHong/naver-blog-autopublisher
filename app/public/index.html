@@ -775,7 +775,7 @@ async function pollAuto() {
     if (!s.running) {
       clearInterval(autoTimer);
       const fatal = s.results.find(r => r.fatal);
-      if (fatal) alert("⚠️ 자동 신청이 스스로 중단됐습니다:\n" + fatal.message);
+      if (fatal) { alert("⚠️ 자동 신청이 스스로 중단됐습니다:\n" + fatal.message); if (fatal.login) api("/api/login", { method: "POST" }).catch(() => {}); } // 세션 만료면 로그인 창을 바로 띄운다
       loadNeighbors();
     }
   }, 3000);
