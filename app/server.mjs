@@ -144,18 +144,29 @@ async function activeBlog() {
 }
 const publishedDirOf = (blog) => path.join(blog.draftsDir, "published");
 
+// 태그 정리: 쉼표·공백·# 구분, 띄어쓰기 제거(네이버 태그는 공백이 들어가면 쪼개진다), 중복 제거, 최대 10개
+function cleanTags(list) {
+  const out = [];
+  for (const t of list) { const v = String(t || "").replace(/^#/, "").replace(/[\s"'(),.]/g, "").trim(); if (v && v.length <= 30 && !out.includes(v)) out.push(v); }
+  return out.slice(0, 10);
+}
+const COMMON_TAGS = []; // 배포판은 공통 태그를 블로그 설정에서 받는다(blog.commonTag)
+// 원고에 태그 줄이 없을 때: 제목 앞 토막(쉼표 전)을 띄어쓰기 없이 + 공통 태그
+function autoTags(title) {
+  const kw = String(title || "").split(/[,，]/)[0].replace(/\s+/g, "").replace(/[^\w가-힣]/g, "");
+  return cleanTags([kw, ...COMMON_TAGS]);
+}
 function parseDraft(raw) {
   const lines = raw.split("\n");
   let title = "";
+  let tags = null;
   const bodyLines = [];
   for (const line of lines) {
-    if (!title && line.startsWith("제목:")) {
-      title = line.slice(3).trim();
-      continue;
-    }
+    if (!title && line.startsWith("제목:")) { title = line.slice(3).trim(); continue; }
+    if (tags === null && /^태그\s*[:：]/.test(line) && bodyLines.filter((l) => l.trim()).length === 0) { tags = cleanTags(line.replace(/^태그\s*[:：]/, "").split(/[,，#\s]+/)); continue; }
     bodyLines.push(line);
   }
-  return { title, body: bodyLines.join("\n").trim() };
+  return { title, body: bodyLines.join("\n").trim(), tags, tagsAuto: tags === null };
 }
 
 async function listDrafts(blog) {
@@ -246,8 +257,8 @@ const server = http.createServer(async (req, res) => {
       const blog = await activeBlog();
       const file = path.basename(url.searchParams.get("file") ?? "");
       const raw = await readFile(path.join(blog.draftsDir, file), "utf8");
-      const { title, body } = parseDraft(raw);
-      return json(res, 200, { file, title, body, check: await checkPost({ title, body, publishedDir: publishedDirOf(blog) }) });
+      const { title, body, tags, tagsAuto } = parseDraft(raw);
+      return json(res, 200, { file, title, body, tags: tags ?? autoTags(title), tagsAuto, check: await checkPost({ title, body, publishedDir: publishedDirOf(blog) }) });
     }
     if (req.method === "POST" && url.pathname === "/api/config") {
       const body = await readBody(req);
@@ -279,13 +290,13 @@ const server = http.createServer(async (req, res) => {
       const { file } = await readBody(req);
       const blog = await activeBlog();
       const raw = await readFile(path.join(blog.draftsDir, path.basename(file)), "utf8");
-      const { title, body } = parseDraft(raw);
+      const { title, body, tags: draftTags } = parseDraft(raw);
       const check = await checkPost({ title, body, publishedDir: publishedDirOf(blog) });
       if (!check.ok) {
         return json(res, 400, { ok: false, message: `SEO 검사 미통과 ${check.failed.length}건 — 수정 후 진행하세요.`, check });
       }
       const u = await loadUserCfg();
-      const publish = { topic: u.publishTopic ?? "비즈니스·경제", scheduleAt: null };
+      const publish = { topic: u.publishTopic ?? "비즈니스·경제", scheduleAt: null, tags: (draftTags ?? autoTags(title)).slice(0, 5) }; // 태그는 3~5개가 적당
       let slotNote = null;
       const times = parseTimes(u); // 비어 있으면 예약 안 함(즉시 발행)
       if (times.length) {
@@ -295,7 +306,7 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await fillEditor({ blogId: blog.blogId, title, body, imagesDir: path.join(blog.draftsDir, "images"), profile: blog.profile, theme: blog.theme, publish });
       if (result.ok && slotNote) await recordSchedule(path.basename(file), slotNote.at, title);
-      return json(res, 200, { ...result, schedule: slotNote });
+      return json(res, 200, { ...result, schedule: slotNote, tags: publish.tags });
     }
     // ── 발행 점검: 큐 원고를 블로그 글 목록(최근 60편)과 대조 → 올라간 글 / 예약된 글 / 미발행 ──
     if (req.method === "GET" && url.pathname === "/api/publish-check") {

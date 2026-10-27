@@ -505,6 +505,7 @@ async function select(file) {
   document.getElementById("detail").innerHTML = `
     <div class="preview">
       <h3>${d.title}</h3>
+      ${d.tags && d.tags.length ? `<div class="mut" style="font-size:12.5px;margin:-4px 0 8px">태그: ${d.tags.map(t => "#" + esc(t)).join(" ")}${d.tagsAuto ? " <span style=\"opacity:.7\">(원고에 태그 줄이 없어 제목에서 자동)</span>" : ""}</div>` : ""}
       <pre>${d.body.replace(/</g,"&lt;")}</pre>
     </div>
     <div class="sect">

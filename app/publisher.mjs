@@ -492,7 +492,7 @@ export async function fillEditor({ blogId, title, body, imagesDir, profile, them
   const videoNote = videoResult ? (videoResult.ok ? " 슬라이드 영상 삽입됨." : ` 영상: ${videoResult.message}.`) : "";
   // 발행 창 열고 주제·예약 시간을 미리 채운다 — 최종 [발행] 버튼은 사람이 누른다
   let publishNote = "";
-  if (publish && (publish.topic || publish.scheduleAt)) {
+  if (publish && (publish.topic || publish.scheduleAt || publish.tags?.length)) {
     try {
       const r = await setPublishOptions(page, editorFrame, publish);
       publishNote = ` ${r.message}`;
@@ -692,7 +692,7 @@ export async function buddyTryPc(blogId, message, profile, shotPath) {
 // 발행 창: 주제 선택 + 예약 발행 시간 설정. 최종 [발행]은 누르지 않는다.
 // 구조(2026-10 확인): 헤더 button.publish_btn__* → 설정 레이어. 주제는 a.link__*("주제 선택 안 함") → 라디오 label("비즈니스·경제") → 확인.
 // 예약은 #radio_time2 → readonly 날짜 input(jQuery UI datepicker: td button.ui-state-default) + select.hour_option__*, select.minute_option__*(10분 단위)
-export async function setPublishOptions(page, editorFrame, { topic, scheduleAt }) {
+export async function setPublishOptions(page, editorFrame, { topic, scheduleAt, tags }) {
   const f = editorFrame || page.mainFrame();
   const notes = [];
   const openLayer = async () => {
@@ -722,6 +722,26 @@ export async function setPublishOptions(page, editorFrame, { topic, scheduleAt }
       const after = ((await f.locator('a[class*="link__"]').filter({ hasText: /주제|선택 안 함|·/ }).first().innerText().catch(() => "")) || "").trim();
       notes.push(after.includes(topic) ? `주제 ${topic} 설정됨` : `주제 설정 확인 안 됨(표시: ${after.slice(0, 20)})`);
     }
+  }
+
+  if (tags && tags.length) {
+    // 태그 입력칸(#tag-input)에 하나씩 넣고 Enter — 2026-10-27 확인: Enter로 #태그 항목(span[id^="tag-item-"])이 생긴다
+    try {
+      const input = f.locator("#tag-input").first();
+      await input.scrollIntoViewIfNeeded().catch(() => {});
+      await input.click({ timeout: 4000 });
+      const existing = new Set((await f.locator('[id^="tag-item-"]').allInnerTexts().catch(() => [])).map((t) => t.replace(/^#/, "").trim()));
+      for (const t of tags) {
+        if (existing.has(t)) continue;
+        await input.fill(t);
+        await page.waitForTimeout(150);
+        await input.press("Enter");
+        await page.waitForTimeout(350);
+      }
+      const now = (await f.locator('[id^="tag-item-"]').allInnerTexts().catch(() => [])).map((t) => t.replace(/^#/, "").trim());
+      const missing = tags.filter((t) => !now.includes(t));
+      notes.push(missing.length ? `태그 ${now.length}개 (못 넣음: ${missing.join(", ")})` : `태그 ${now.length}개: ${now.join(", ")}`);
+    } catch (e) { notes.push(`태그 입력 실패: ${String(e?.message || e).slice(0, 60)}`); }
   }
 
   if (scheduleAt) {
